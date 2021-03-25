@@ -1,0 +1,6 @@
+[MESSAGES CONTROL]
+disable =
+	too-many-instance-attributes,
+	too-many-arguments,
+	logging-fstring-interpolation,
+	too-few-public-methods,
