@@ -107,7 +107,7 @@ class SegregationModel(ABC):
                 np.random.shuffle(agent_cells)
                 for agent in agent_cells:
                     agent = tuple(agent)
-                    if (self.cell_stats(agent, self.env[agent])
+                    if ((not self.cell_stats(agent, self.env[agent])[0])
                             and self.move_policy(agent)):
                         self.step += 1
                         self.save_env()
