@@ -7,6 +7,7 @@ import shutil
 import argparse
 import random
 import coloredlogs
+from abc import ABC, abstractmethod
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -22,7 +23,6 @@ LOG = logging.getLogger(__name__)
 PROJ_DIR = pathlib.Path(__file__).parent.absolute()
 IMAGE_DIR = PROJ_DIR.joinpath('img')
 IMAGE_DIR.mkdir(mode=0o775, exist_ok=True)
-GIF_TEMP_DIR = IMAGE_DIR.joinpath('gif_frames')
 
 # Simulation constants
 MAX_SEARCHES = 100  # The parameter Q, used in the random policy
@@ -31,7 +31,361 @@ BLUE = np.array([0, 0, 1])
 EMPTY = np.array([0, 0, 0])
 
 ################################################################################
-# Simulation functions
+# Simulation classes
+################################################################################
+
+
+class SegregationModel(ABC):
+    """Abstract class for the segregation model interface.
+
+    Parameters
+    ----------
+    grid_size : int
+        Size of the environment grid (the length).
+    min_neighbors : int
+        Minimum neighbors of the same type to be happy.
+    num_agents : int
+        Number of agents to populate the grid.
+    max_epochs : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    iterations : int
+        Number of iterations to run the simulation.
+    make_gif: bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
+    """
+    def __init__(
+        self,
+        grid_size: int,
+        min_neighbors: int,
+        num_agents: int,
+        max_epochs: int,
+        iterations: int,
+        make_gif: bool,
+    ):
+        self.grid_size = grid_size
+        self.min_neighbors = min_neighbors
+        self.num_agents = num_agents
+        self.max_epochs = max_epochs
+        self.iterations = iterations
+        self.make_gif = make_gif
+        self.epoch = 0
+        self.iteration = 0
+        self.step = 0
+        self.happiness = np.zeros((iterations, max_epochs + 1))
+        self.init_env()
+        self.file_prefix = "segregation_model"
+        # This gets initialized in a function but the linter doesn't like that
+        self.temp_gif_dir = IMAGE_DIR.joinpath(self.file_prefix)
+
+    def run_sim(self):
+        """Run the simulation with the parameters of the object."""
+        LOG.info(f"Starting simulation for {self.file_prefix}")
+        # Clear old gifs from this policy
+        # TODO: (#3) Should we do this? Might be a bit aggressive
+        for path in list(IMAGE_DIR.glob(f"{self.file_prefix}*")):
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        for self.iteration in range(self.iterations):
+            # TODO: (#4) This could be better with progress bars
+            LOG.info(f"Begin iteration {self.iteration+1} of "
+                     f"{self.iterations}")
+            self.init_env()
+            self.step = 0
+            self.epoch = 0
+            self.make_temp_gif_dir()
+            self.save_env()
+            self.log_happiness()
+            for self.epoch in range(1, self.max_epochs + 1):
+                # TODO: (#4) Again, could be better with progress bars
+                LOG.info(f"Begin epoch {self.epoch} of {self.max_epochs}")
+                agent_cells = np.concatenate((self.get_matching_coords(RED),
+                                              self.get_matching_coords(BLUE)))
+                np.random.shuffle(agent_cells)
+                for agent in agent_cells:
+                    agent = tuple(agent)
+                    if (self.cell_stats(agent, self.env[agent])
+                            and self.move_policy(agent)):
+                        self.step += 1
+                        self.save_env()
+                self.log_happiness()
+            self.save_gif()
+            shutil.rmtree(self.temp_gif_dir, ignore_errors=True)
+        self.save_happiness()
+        LOG.info(f"Completed simulation for {self.file_prefix}")
+
+    @abstractmethod
+    def move_policy(self, agent_coord: tuple[int]) -> bool:
+        """Find a place to move for the given agent.
+
+        This must be implemented for each policy.
+
+        Parameters
+        ----------
+        agent_coord : tuple[int]
+            Coordinates of the agent to move.
+
+        Returns
+        -------
+        bool
+            True if the agent moved, else False.
+        """
+        ...
+
+    def init_env(self):
+        """Initialize `self.env`."""
+        self.env = np.zeros((self.grid_size, self.grid_size, 3))
+        coords = [(i, j) for i in range(self.grid_size)
+                  for j in range(self.grid_size)]
+        random.shuffle(coords)
+        for i, coord in enumerate(coords):
+            if i < (self.num_agents // 2):
+                self.env[coord] = BLUE
+            elif i < self.num_agents:
+                self.env[coord] = RED
+            else:
+                self.env[coord] = EMPTY
+
+    def swap_cells(self, coord1: tuple[int], coord2: tuple[int]) -> None:
+        """Swap 2 cells in place in `self.env`.
+
+        Parameters
+        ----------
+        coord1, coord2 : np.ndarray
+            The coordinates of the cells to swap in the form (x, y).
+        """
+        temp_cell = np.copy(self.env[coord1])
+        self.env[coord1] = np.copy(self.env[coord2])
+        self.env[coord2] = temp_cell
+
+    def cell_stats(
+        self,
+        agent_coord: tuple[int],
+        agent_type: np.ndarray,
+    ) -> tuple[bool, int]:
+        """Check the stats of a cell for a given agent type.
+
+        Status includes whether or not the given `agent_type` is happy
+        at `agent_coord`, as well as how many neighbors are the same
+        type. The agent is happy if at least `num_agents` neighbors are
+        of type `agent_type` surrounding `agent_coord`.
+
+        Parameters
+        ----------
+        agent_coord : tuple[int]
+            Coordinates of the agent to check.
+        agent_type : np.ndarray
+            Type of the agent to check. This is not derived from
+            `agent_coord` to facilitate scouting potential moves without
+            actually doing the move.
+
+        Returns
+        -------
+        tuple[bool, int]
+            A tuple containing a bool indicating whether the agent of
+            type `agent_type` is happy at `agent_coord` and an int
+            showing the number of neighbors of type `agent_type`.
+        """
+        agent_type = self.env[agent_coord]
+        matching_neighbors = 0
+        for i in [-1, 0, 1]:
+            for j in [-1, 0, 1]:
+                if i == 0 and j == 0:
+                    continue
+                if (self.env[(agent_coord[0] + i) % self.grid_size,
+                             (agent_coord[1] + j) %
+                             self.grid_size] == agent_type).all():
+                    matching_neighbors += 1
+        return ((matching_neighbors >= self.min_neighbors), matching_neighbors)
+
+    def get_matching_coords(self, agent_type: np.ndarray) -> np.ndarray:
+        """Get a list of coordinates matching agent_type.
+
+        Parameters
+        ----------
+        agent_type : np.ndarray
+            The agent type, either `RED`, `BLUE`, or `EMPTY`. These are
+            in the form [red_val, green_val, blue_val].
+
+        Returns
+        -------
+        np.ndarray
+            Array of coordinates of cells containing agent_type in the form
+            [[x0, y0], [x1, y1], ...].
+        """
+        return np.array([(i, j) for i in range(self.grid_size)
+                         for j in range(self.grid_size)
+                         if (self.env[i, j] == agent_type).all()])
+
+    def log_happiness(self):
+        """Log the portion of happy agents."""
+        agent_cells = np.concatenate(
+            (self.get_matching_coords(RED), self.get_matching_coords(BLUE)))
+        happy_agents = 0
+        for agent in agent_cells:
+            agent = tuple(agent)
+            happy, _ = self.cell_stats(agent, self.env[agent])
+            if happy:
+                happy_agents += 1
+        happy_portion = happy_agents / self.num_agents
+        self.happiness[self.iteration, self.epoch] = happy_portion
+
+    def make_temp_gif_dir(self) -> None:
+        """Generates and defines the temporary gif dir."""
+        if not self.make_gif:
+            return
+        self.temp_gif_dir = IMAGE_DIR.joinpath(
+            f"{self.file_prefix}_{self.iteration:02d}")
+        shutil.rmtree(self.temp_gif_dir, ignore_errors=True)
+        self.temp_gif_dir.mkdir(mode=0o775, exist_ok=True)
+
+    def save_env(self) -> None:
+        """Save a single frame image."""
+        if not self.make_gif:
+            return
+        # Create the plot/image
+        fig, axis = plt.subplots()
+        axis.imshow(self.env)
+        axis.axis("off")
+        axis.set_title(f"{self.file_prefix} epoch {self.epoch}\n"
+                       f"step {self.step:06d}")
+        # Save the figure as a PNG
+        fig.savefig(self.temp_gif_dir.joinpath(f"step_{self.step:06d}"))
+        fig.clf()
+        plt.close()
+
+    def save_gif(self) -> None:
+        """Save the images into a gif."""
+        if not self.make_gif:
+            return
+        LOG.info("Generating GIF...")
+        temp_gif_dir = IMAGE_DIR.joinpath(
+            f"{self.file_prefix}_{self.iteration:02d}")
+        images = []
+        for path in sorted(list(temp_gif_dir.iterdir())):
+            image = Image.open(path)
+            images.append(image.copy())
+            image.close()
+        gif_path = IMAGE_DIR.joinpath(
+            f"{self.file_prefix}_{self.iteration:02d}.gif")
+        images[0].save(
+            gif_path,
+            save_all=True,
+            duration=25,
+            append_images=images[1:],
+        )
+        LOG.info(f"A GIF of the simulation has been saved in:\n{gif_path}")
+
+    def save_happiness(self) -> None:
+        """Save a plot of mean happiness and standard deviation."""
+        # Calculate metrics to be plotted
+        mean = self.happiness.mean(axis=0)
+        stdev = self.happiness.std(axis=0)
+        epochs = np.arange(self.max_epochs + 1)
+        # Create the plot
+        fig, axis = plt.subplots()
+        # TODO: (#5) If someone wants to make this look nicer, PLEASE DO!
+        axis.errorbar(epochs, mean, yerr=stdev)
+        axis.set_xlabel("Epoch")
+        axis.set_xlim([0, self.max_epochs])
+        axis.set_xticks(epochs)
+        axis.set_ylabel("Happiness")
+        axis.set_ylim([0, 1])
+        axis.set_title(f"{self.file_prefix} mean happiness vs epoch number")
+        plt_path = IMAGE_DIR.joinpath(f"{self.file_prefix}_happiness.png")
+        fig.savefig(plt_path)
+        fig.clf()
+        plt.close()
+        LOG.info("The mean happiness time series plot has been saved in:\n"
+                 f"{plt_path}")
+
+
+class RandomModel(SegregationModel):
+    """Segregation model which implements the random policy.
+
+    If the agent is unhappy, it searches random empty cells until it
+    finds one which makes it happy, or if it searches `MAX_SEARCHES`
+    it will select the one with the most matching neighbors.
+
+    Parameters
+    ---------
+    grid_size : int
+        Size of the environment grid (the length).
+    min_neighbors : int
+        Minimum neighbors of the same type to be happy.
+    num_agents : int
+        Number of agents to populate the grid.
+    max_epochs : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    iterations : int
+        Number of iterations to run the simulation.
+    make_gif: bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
+    """
+    def __init__(
+        self,
+        grid_size: int,
+        min_neighbors: int,
+        num_agents: int,
+        max_epochs: int,
+        iterations: int,
+        make_gif: bool,
+    ):
+        super().__init__(
+            grid_size,
+            min_neighbors,
+            num_agents,
+            max_epochs,
+            iterations,
+            make_gif,
+        )
+        self.file_prefix = "random_policy"
+
+    def move_policy(self, agent_coord: tuple[int]) -> bool:
+        """Randomly choose a tile that makes the agent happy.
+
+        If the agent cannot be happy in MAX_SEARCHES, it chooses the one it
+        saw which has the most neighbors of the same type.
+
+        Parameters
+        ----------
+        agent_coord : tuple[int]
+            Coordinates of the agent to move.
+
+        Returns
+        -------
+        bool
+            True if the agent moved, else False.
+        """
+        agent_type = self.env[agent_coord]
+        # Get randomized list of empty cells
+        empty_cells = self.get_matching_coords(EMPTY)
+        np.random.shuffle(empty_cells)
+        best_cell = tuple(empty_cells[0])
+        _, best_cell_matching_neighbors = self.cell_stats(
+            agent_coord, agent_type)
+        for i, cell in enumerate(empty_cells):
+            cell = tuple(cell)
+            happy, matching_neighbors = self.cell_stats(
+                agent_coord, agent_type)
+            if matching_neighbors > best_cell_matching_neighbors:
+                best_cell = cell
+                best_cell_matching_neighbors = matching_neighbors
+            if happy:
+                break
+            if i >= MAX_SEARCHES:
+                break
+        self.swap_cells(agent_coord, best_cell)
+        return True
+
+
+################################################################################
+# CLI handler functions
 ################################################################################
 
 
@@ -41,243 +395,55 @@ def main(
     num_agents: int,
     max_epochs: int,
     iterations: int,
+    make_gif: bool,
 ) -> None:
-    """Main function
+    """Main function.
 
     Parameters
     ---------
     grid_size : int
-        Size of the environment grid (the length)
+        Size of the environment grid (the length).
     min_neighbors : int
-        Minimum neighbors of the same type to be happy
+        Minimum neighbors of the same type to be happy.
     num_agents : int
-        Number of agents to populate the grid
+        Number of agents to populate the grid.
     max_epochs : int
-        Maximum epochs for each iteration
-        One epoch is one time through the population of agents
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
     iterations : int
-        Number of iterations to run the simulation
+        Number of iterations to run the simulation.
+    make_gif : bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
     """
-    LOG.debug("Running simulation with parameters:\n"
-              f"grid_size (L) = {grid_size},\n"
-              f"min_neighbors (k) = {min_neighbors},\n"
-              f"num_agents (N) = {num_agents},\n"
-              f"max_epochs={max_epochs}")
-    for i in range(iterations):
-        LOG.info(f"Begin iteration {i+1}")
-        shutil.rmtree(GIF_TEMP_DIR, ignore_errors=True)  # Remove old steps
-        GIF_TEMP_DIR.mkdir(mode=0o775, exist_ok=True)
-        env = init_env(grid_size, num_agents)
-        step = 0
-        save_env(
-            env,
-            f"Random Policy\nepoch 0",
-            GIF_TEMP_DIR.joinpath(f"step_{step:05d}.png"),
-        )
-        for epoch in range(max_epochs):
-            LOG.info(f"Begin epoch {epoch+1}")
-            agent_cells = np.concatenate(
-                (get_matching_coords(env, grid_size, RED),
-                 get_matching_coords(env, grid_size, BLUE)))
-            np.random.shuffle(agent_cells)
-            for agent in agent_cells:
-                if random_policy(env, grid_size, min_neighbors, tuple(agent)):
-                    step += 1
-                    save_env(
-                        env,
-                        f"Random Policy - epoch {epoch}\nstep {step:06d}",
-                        GIF_TEMP_DIR.joinpath(f"step_{step:06d}.png"),
-                    )
-        save_gif(
-            GIF_TEMP_DIR,
-            IMAGE_DIR.joinpath(f"random_{iterations:02d}.gif"),
-        )
-
-
-def random_policy(env: np.ndarray, grid_size: int, min_neighbors: int,
-                  agent_coord: tuple[int]) -> bool:
-    """Randomly choose a tile that makes the agent happy
-
-    If the agent cannot be happy in MAX_SEARCHES, it chooses the one it
-    saw which has the most neighbors of the same type
-
-    Parameters
-    ----------
-    env : np.ndarray
-        The environment grid which contains agents
-    grid_size : int
-        Size of the environment grid (the length)
-    min_neighbors : int
-        Minimum neighbors of the same type to be happy
-    agent_coord : np.ndarray
-        The coordinates of the agent to evaluate in the form [x, y]
-
-    Returns
-    -------
-    bool
-        True if the agent moved, false if not
-    """
-    agent_type = env[agent_coord]
-    # Check if the agent is happy first
-    happy, _ = happiness(env, grid_size, min_neighbors, agent_coord,
-                         agent_type)
-    if happy:
-        return False
-    # Get randomized list of empty cells
-    empty_cells = get_matching_coords(env, grid_size, EMPTY)
-    np.random.shuffle(empty_cells)
-    best_cell = tuple(empty_cells[0])
-    _, best_cell_matching_neighbors = happiness(env, grid_size, min_neighbors,
-                                                agent_coord, agent_type)
-    for i, cell in enumerate(empty_cells):
-        cell = tuple(cell)
-        happy, matching_neighbors = happiness(env, grid_size, min_neighbors,
-                                              agent_coord, agent_type)
-        if matching_neighbors > best_cell_matching_neighbors:
-            best_cell = cell
-            best_cell_matching_neighbors = matching_neighbors
-        if happy:
-            break
-        if i >= MAX_SEARCHES:
-            break
-    swap_cells(env, agent_coord, best_cell)
-    return True
-
-
-def happiness(
-    env: np.ndarray,
-    grid_size: int,
-    min_neighbors: int,
-    agent_coord: tuple[int],
-    agent_type: np.ndarray,
-) -> tuple[bool, int]:
-    """Check if the given coordinate is happy
-
-    Check all 8 neighbors (adjacent + diagonals) and see if number of
-    alike neighbors is at least min_neighbors
-    """
-    agent_type = env[agent_coord]
-    matching_neighbors = 0
-    for i in [-1, 0, 1]:
-        for j in [-1, 0, 1]:
-            if i == 0 and j == 0:
-                continue
-            if (env[(agent_coord[0] + i) % grid_size,
-                    (agent_coord[1] + j) % grid_size] == agent_type).all():
-                matching_neighbors += 1
-    return ((matching_neighbors >= min_neighbors), matching_neighbors)
-
-
-def swap_cells(env: np.ndarray, coord1: tuple[int],
-               coord2: tuple[int]) -> None:
-    """Swap 2 cells in place in env
-
-    Parameters
-    ----------
-    env : np.ndarray
-        The environment grid which contains agents
-    coord1, coord2 : np.ndarray
-        The coordinates of the cells to swap in the form [x, y]
-    """
-    temp_cell = np.copy(env[coord1])
-    env[coord1] = np.copy(env[coord2])
-    env[coord2] = temp_cell
-
-
-def get_matching_coords(env: np.ndarray, grid_size: int,
-                        agent_type: np.ndarray) -> np.ndarray:
-    """Get a list of coordinates matching agent_type
-
-    Parameters
-    ----------
-    env : np.ndarray
-        The environment grid which contains agents
-    grid_size : int
-        The length of the env grid
-    agent_type : np.ndarray
-        The agent type, either RED, BLUE, or EMPTY
-        These are in the form of RGB values and have length 3
-
-    Returns
-    -------
-    np.ndarray
-        Array of coordinates of cells containing agent_type
-        In the form [(x0, y0), (x1, y1), ...]
-    """
-    return np.array([(i, j) for i in range(grid_size) for j in range(grid_size)
-                     if (env[i, j] == agent_type).all()])
-
-
-def init_env(grid_size: int, num_agents: int) -> np.ndarray:
-    """Return the initialized env"""
-    env = np.zeros((grid_size, grid_size, 3))
-    coords = [(i, j) for i in range(grid_size) for j in range(grid_size)]
-    random.shuffle(coords)
-    for i, coord in enumerate(coords):
-        if i < (num_agents // 2):
-            env[coord] = BLUE
-        elif i < num_agents:
-            env[coord] = RED
-        else:
-            env[coord] = EMPTY
-    return env
-
-
-def save_env(
-    env: np.ndarray,
-    title: str,
-    path: pathlib.Path,
-) -> None:
-    """Save a single frame image
-
-    Parameters
-    ----------
-    TODO
-    """
-    fig, axis = plt.subplots()
-    axis.imshow(env)
-    axis.axis("off")
-    axis.set_title(title)
-    fig.savefig(path)
-    fig.clf()
-    plt.close()
-
-
-def save_gif(img_dir: pathlib.Path, gif_path: pathlib.Path):
-    """Save the images into a gif"""
-    LOG.info(f"Generating gif {gif_path} from {img_dir}")
-    images = []
-    for f in sorted(list(img_dir.iterdir())):
-        image = Image.open(f)
-        images.append(image.copy())
-        image.close()
-        f.unlink()
-    img_dir.rmdir()
-    images[0].save(
-        gif_path,
-        save_all=True,
-        duration=25,
-        append_images=images[1:],
+    LOG.debug("Running simulation with parameters:")
+    LOG.debug(f"grid_size (L) = {grid_size}")
+    LOG.debug(f"min_neighbors (k) = {min_neighbors}")
+    LOG.debug(f"num_agents (N) = {num_agents}")
+    LOG.debug(f"max_epochs={max_epochs}")
+    random_model = RandomModel(
+        grid_size,
+        min_neighbors,
+        num_agents,
+        max_epochs,
+        iterations,
+        make_gif,
     )
-    LOG.info("Done saving gif")
-
-
-################################################################################
-# CLI handler functions
-################################################################################
+    random_model.run_sim()
 
 
 def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
-    """Parse the arguments
+    """Parse the arguments.
 
     Parameters
     ----------
     arg_list : list[str]
+        Arguments to be parsed.
 
     Returns
     -------
     argparse.Namespace
-        A namespace of parsed arguments
+        A namespace of parsed arguments.
     """
     parser = argparse.ArgumentParser(
         description="A penguin swarm simulator",
@@ -295,6 +461,14 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
         type=int,
         choices=range(1, 6),
         default=2,
+    )
+    parser.add_argument(
+        "-g",
+        "--make_gif",
+        help="create a gif of each iteration\n"
+        "takes much longer - only recommended with -i 1",
+        default=False,
+        action="store_true",
     )
     parser.add_argument(
         "-L",
@@ -321,14 +495,14 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
     parser.add_argument(
         "-e",
         "--max_epochs",
-        help="Maximum number of simulation epochs",
+        help="maximum number of simulation epochs",
         type=int,
         default=20,
     )
     parser.add_argument(
         "-i",
         "--iterations",
-        help="Number of times to run the simulation",
+        help="number of times to run the simulation",
         type=int,
         default=30,
     )
@@ -338,7 +512,6 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
 if __name__ == "__main__":
     import sys
     args = parse_args()
-    print(type(args))
     coloredlogs.install(level=args.log_level * 10,
                         logger=LOG,
                         milliseconds=True)
@@ -355,8 +528,7 @@ if __name__ == "__main__":
         args.min_neighbors,
         args.num_agents,
         args.max_epochs,
-        1,
-        # TODO: Fix this to do multiple iterations
-        # args.iterations,
+        args.iterations,
+        args.make_gif,
     )
     logging.shutdown()
