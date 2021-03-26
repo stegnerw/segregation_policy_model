@@ -29,7 +29,6 @@ MAX_SEARCHES = 100  # The parameter Q, used in the random policy
 RED = np.array([1, 0, 0])
 BLUE = np.array([0, 0, 1])
 EMPTY = np.array([0, 0, 0])
-MODEL_NAMES = ["Random", ""]
 
 ################################################################################
 # Simulation classes
@@ -40,41 +39,36 @@ class SegregationModel(ABC):
     """Abstract class for the segregation model interface.
 
     Parameters
-    ----------
-    grid_size : int
-        Size of the environment grid (the length).
-    min_neighbors : int
-        Minimum neighbors of the same type to be happy.
-    num_agents : int
-        Number of agents to populate the grid.
-    max_epochs : int
-        Maximum epochs for each iteration. One epoch is one time
-        through the population of agents.
-    iterations : int
-        Number of iterations to run the simulation.
-    make_gif: bool
+    ---------
+    arg_dict : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    arg_dict["make_gif"] : bool
         Whether or not to save a gif. Saving a gif takes significantly
         longer.
+    arg_dict["grid_size"] : int
+        Size of the environment grid (the length).
+    arg_dict["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    arg_dict["num_agents"] : int
+        Number of agents to populate the grid.
+    arg_dict["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    arg_dict["iterations"] : int
+        Number of iterations to run the simulation.
     """
-    def __init__(
-        self,
-        grid_size: int,
-        min_neighbors: int,
-        num_agents: int,
-        max_epochs: int,
-        iterations: int,
-        make_gif: bool,
-    ):
-        self.grid_size = grid_size
-        self.min_neighbors = min_neighbors
-        self.num_agents = num_agents
-        self.max_epochs = max_epochs
-        self.iterations = iterations
-        self.make_gif = make_gif
+    def __init__(self, arg_dict):
+        self.make_gif = arg_dict["make_gif"]
+        self.grid_size = arg_dict["grid_size"]
+        self.min_neighbors = arg_dict["min_neighbors"]
+        self.num_agents = arg_dict["num_agents"]
+        self.max_epochs = arg_dict["max_epochs"]
+        self.iterations = arg_dict["iterations"]
         self.epoch = 0
         self.iteration = 0
         self.step = 0
-        self.happiness = np.zeros((iterations, max_epochs + 1))
+        self.happiness = np.zeros((self.iterations, self.max_epochs + 1))
         self.init_env()
         self.file_prefix = "segregation_model"
         # This gets initialized in a function but the linter doesn't like that
@@ -312,38 +306,26 @@ class RandomModel(SegregationModel):
 
     Parameters
     ---------
-    grid_size : int
-        Size of the environment grid (the length).
-    min_neighbors : int
-        Minimum neighbors of the same type to be happy.
-    num_agents : int
-        Number of agents to populate the grid.
-    max_epochs : int
-        Maximum epochs for each iteration. One epoch is one time
-        through the population of agents.
-    iterations : int
-        Number of iterations to run the simulation.
-    make_gif: bool
+    arg_dict : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    arg_dict["make_gif"] : bool
         Whether or not to save a gif. Saving a gif takes significantly
         longer.
+    arg_dict["grid_size"] : int
+        Size of the environment grid (the length).
+    arg_dict["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    arg_dict["num_agents"] : int
+        Number of agents to populate the grid.
+    arg_dict["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    arg_dict["iterations"] : int
+        Number of iterations to run the simulation.
     """
-    def __init__(
-        self,
-        grid_size: int,
-        min_neighbors: int,
-        num_agents: int,
-        max_epochs: int,
-        iterations: int,
-        make_gif: bool,
-    ):
-        super().__init__(
-            grid_size,
-            min_neighbors,
-            num_agents,
-            max_epochs,
-            iterations,
-            make_gif,
-        )
+    def __init__(self, arg_dict: dict):
+        super().__init__(arg_dict)
         self.file_prefix = "random_policy"
 
     def move_policy(self, agent_coord: tuple[int]) -> bool:
@@ -384,52 +366,114 @@ class RandomModel(SegregationModel):
         return True
 
 
+class SocialModel(SegregationModel):
+    """Segregation model which implements the social policy.
+
+    TODO: Extended summary
+
+    Parameters
+    ---------
+    arg_dict : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    arg_dict["make_gif"] : bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
+    arg_dict["grid_size"] : int
+        Size of the environment grid (the length).
+    arg_dict["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    arg_dict["num_agents"] : int
+        Number of agents to populate the grid.
+    arg_dict["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    arg_dict["iterations"] : int
+        Number of iterations to run the simulation.
+    arg_dict["num_friends"] : int
+        Number of friends for each agent for "social" policy. Different
+        policies may use this differently if desired.
+    arg_dict["search_radius"] : int
+        Search radius of each friend for "social" policy. Different
+        policies may use this differently if desired.
+    """
+    def __init__(self, arg_dict):
+        super().__init__(arg_dict)
+        self.num_friends = arg_dict["num_friends"]
+        self.search_radius = arg_dict["search_radius"]
+        self.file_prefix = "social_policy"
+
+    def move_policy(self, agent_coord: tuple[int]) -> bool:
+        """Randomly choose a tile that makes the agent happy.
+
+        If the agent cannot be happy in MAX_SEARCHES, it chooses the one it
+        saw which has the most neighbors of the same type.
+
+        Parameters
+        ----------
+        agent_coord : tuple[int]
+            Coordinates of the agent to move.
+
+        Returns
+        -------
+        bool
+            True if the agent moved, else False.
+        """
+        return False
+
+
 ################################################################################
 # CLI handler functions
 ################################################################################
 
+# These have to be here because Python does not support forward declaration...
+# MODEL_NAMES = [
+# "random",
+# "social",
+# ]
+MODELS = {
+    "random": RandomModel,
+    "social": SocialModel,
+}
 
-def main(
-    grid_size: int,
-    min_neighbors: int,
-    num_agents: int,
-    max_epochs: int,
-    iterations: int,
-    make_gif: bool,
-) -> None:
+
+def main(args) -> None:
     """Main function.
+
+    The main function handles starting the correct model.. Eventually,
+    it will handle multiple simulation targets and facilitate plotting
+    happiness time-series data on the same plots for the report.
 
     Parameters
     ---------
-    grid_size : int
-        Size of the environment grid (the length).
-    min_neighbors : int
-        Minimum neighbors of the same type to be happy.
-    num_agents : int
-        Number of agents to populate the grid.
-    max_epochs : int
-        Maximum epochs for each iteration. One epoch is one time
-        through the population of agents.
-    iterations : int
-        Number of iterations to run the simulation.
-    make_gif : bool
+    args : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    args["model"] : str
+        The model to run.
+    args["make_gif"] : bool
         Whether or not to save a gif. Saving a gif takes significantly
         longer.
+    args["grid_size"] : int
+        Size of the environment grid (the length).
+    args["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    args["num_agents"] : int
+        Number of agents to populate the grid.
+    args["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    args["iterations"] : int
+        Number of iterations to run the simulation.
+    args["num_friends"] : int
+        Number of friends for each agent for "social" policy. Different
+        policies may use this differently if desired.
+    args["search_radius"] : int
+        Search radius of each friend for "social" policy. Different
+        policies may use this differently if desired.
     """
-    LOG.debug("Running simulation with parameters:")
-    LOG.debug(f"grid_size (L) = {grid_size}")
-    LOG.debug(f"min_neighbors (k) = {min_neighbors}")
-    LOG.debug(f"num_agents (N) = {num_agents}")
-    LOG.debug(f"max_epochs={max_epochs}")
-    random_model = RandomModel(
-        grid_size,
-        min_neighbors,
-        num_agents,
-        max_epochs,
-        iterations,
-        make_gif,
-    )
-    random_model.run_sim()
+    model_obj = MODELS[args["model"]](args)
+    model_obj.run_sim()
 
 
 def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
@@ -446,18 +490,24 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
         A namespace of parsed arguments.
     """
     parser = argparse.ArgumentParser(
-        description="A penguin swarm simulator",
+        description="A segregation policy simulator.",
         formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "model",
+        help="model to run",
+        type=str,
+        choices=list(MODELS.keys()),
     )
     parser.add_argument(
         "-ll",
         "--log_level",
-        help="""set the logging level:
-        1 = DEBUG
-        2 = INFO
-        3 = WARNING
-        4 = ERROR
-        5 = CRITICAL""",
+        help="set the logging level:\n"
+        "1 = DEBUG\n"
+        "2 = INFO\n"
+        "3 = WARNING\n"
+        "4 = ERROR\n"
+        "5 = CRITICAL\n",
         type=int,
         choices=range(1, 6),
         default=2,
@@ -506,6 +556,20 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
         type=int,
         default=30,
     )
+    parser.add_argument(
+        "-n",
+        "--num_friends",
+        help="\"social\" policy - number of friends",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
+        "-p",
+        "--search_radius",
+        help="\"social\" policy - search radius of friend (must be odd)",
+        type=int,
+        default=3,
+    )
     return parser.parse_args(args=arg_list)
 
 
@@ -516,19 +580,21 @@ if __name__ == "__main__":
                         logger=LOG,
                         milliseconds=True)
     # Check boundaries on arguments
-    if args.grid_size <= 2:
-        LOG.error("GRID_SIZE must be >= 3!")
+    if args.grid_size < 2:
+        LOG.error("GRID_SIZE must be at least 2")
         sys.exit(1)
     if args.num_agents < 2 or args.num_agents >= args.grid_size**2:
         LOG.error("NUM_AGENTS must be in the interval [2, L*L)")
         sys.exit(1)
+    if args.num_friends < 0:
+        LOG.error("NUM_FRIENDS must be at least 0")
+        sys.exit(1)
+    if args.search_radius < 3:
+        LOG.error("SEARCH_RADIUS must be at least 3")
+        sys.exit(1)
+    if (args.search_radius % 2) == 0:
+        LOG.error("SEARCH_RADIUS must be odd")
+        sys.exit(1)
     # Run main
-    main(
-        args.grid_size,
-        args.min_neighbors,
-        args.num_agents,
-        args.max_epochs,
-        args.iterations,
-        args.make_gif,
-    )
+    main(vars(args))
     logging.shutdown()
