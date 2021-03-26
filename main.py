@@ -29,6 +29,7 @@ MAX_SEARCHES = 100  # The parameter Q, used in the random policy
 RED = np.array([1, 0, 0])
 BLUE = np.array([0, 0, 1])
 EMPTY = np.array([0, 0, 0])
+MODEL_NAMES = ["Random", ""]
 
 ################################################################################
 # Simulation classes
@@ -293,7 +294,6 @@ class SegregationModel(ABC):
         axis.set_xlim([0, self.max_epochs])
         axis.set_xticks(epochs)
         axis.set_ylabel("Happiness")
-        axis.set_ylim([0, 1])
         axis.set_title(f"{self.file_prefix} mean happiness vs epoch number")
         plt_path = IMAGE_DIR.joinpath(f"{self.file_prefix}_happiness.png")
         fig.savefig(plt_path)
