@@ -6,8 +6,8 @@ import pathlib
 import shutil
 import argparse
 import random
-import coloredlogs
 from abc import ABC, abstractmethod
+import coloredlogs
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
