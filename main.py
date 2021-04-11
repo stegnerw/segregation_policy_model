@@ -31,7 +31,7 @@ LOG = logging.getLogger(__name__)
 PROJ_DIR = pathlib.Path(__file__).parent.resolve()
 IMAGE_DIR = PROJ_DIR.joinpath("img")
 IMAGE_DIR.mkdir(mode=0o775, exist_ok=True)
-if pathlib.Path("/tmp").exists():
+if pathlib.Path("/tmp").resolve().exists():
     TMP_DIR = pathlib.Path("/tmp/segregation_model").resolve()
 else:
     TMP_DIR = IMAGE_DIR.joinpath("tmp")
@@ -39,9 +39,9 @@ TMP_DIR.mkdir(mode=0o775, exist_ok=True)
 
 # Simulation constants
 MAX_SEARCHES = 100  # The parameter Q, used in the random policy
-RED = np.array([1, 0, 0])
-BLUE = np.array([0, 0, 1])
-EMPTY = np.array([0, 0, 0])
+RED = np.array([1, 0, 0], dtype=np.float64)
+BLUE = np.array([0, 0, 1], dtype=np.float64)
+EMPTY = np.array([0, 0, 0], dtype=np.float64)
 
 ################################################################################
 # Simulation classes
@@ -175,15 +175,15 @@ class SegregationModel(ABC):
         np.random.shuffle(coords)
         for i, coord in enumerate(coords):
             if i < (self.num_agents // 2):
-                self.population.append(Agent(BLUE, coord))
+                self.population.append(Agent(np.copy(BLUE), coord))
                 self.blue_agents.append(self.population[-1])
                 self.env[tuple(coord)] = self.population[-1]
             elif i < self.num_agents:
-                self.population.append(Agent(RED, coord))
+                self.population.append(Agent(np.copy(RED), coord))
                 self.red_agents.append(self.population[-1])
                 self.env[tuple(coord)] = self.population[-1]
             else:
-                self.empty_cells.append(Agent(EMPTY, coord))
+                self.empty_cells.append(Agent(np.copy(EMPTY), coord))
                 self.env[tuple(coord)] = self.empty_cells[-1]
 
     def get_coords(self) -> np.ndarray:
@@ -277,7 +277,7 @@ class SegregationModel(ABC):
         """Generates and defines the temporary gif dir."""
         if not self.make_gif:
             return
-        self.temp_gif_dir = IMAGE_DIR.joinpath(
+        self.temp_gif_dir = TMP_DIR.joinpath(
             f"{self.file_prefix}_{self.iteration:02d}")
         shutil.rmtree(self.temp_gif_dir, ignore_errors=True)
         self.temp_gif_dir.mkdir(mode=0o775, exist_ok=True)
@@ -308,10 +308,8 @@ class SegregationModel(ABC):
         if not self.make_gif:
             return
         LOG.info("Generating GIF...")
-        temp_gif_dir = IMAGE_DIR.joinpath(
-            f"{self.file_prefix}_{self.iteration:02d}")
         images = []
-        for path in sorted(list(temp_gif_dir.iterdir())):
+        for path in sorted(list(self.temp_gif_dir.iterdir())):
             image = Image.open(path)
             images.append(image.copy())
             image.close()
@@ -464,9 +462,10 @@ class SocialModel(SegregationModel):
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
         self.search_radius = arg_dict["search_radius"] // 2
-        self.file_prefix = str(f"social_policy_{self.grid_size}L_"
-                               f"{self.num_agents}N_{self.min_neighbors}k_"
-                               f"{self.num_friends}p_{self.search_radius}n")
+        self.file_prefix = str(
+            f"social_policy_{self.grid_size}L_"
+            f"{self.num_agents}N_{self.min_neighbors}k_"
+            f"{self.num_friends}p_{self.search_radius*2+1}n")
         self.model_name = "Social Policy"
 
     def init_population(self) -> None:
@@ -552,7 +551,7 @@ MODELS = {
 }
 
 
-def main(arg_dict) -> None:
+def main(arg_dicts: list[dict]) -> None:
     """Main function.
 
     The main function handles starting the correct model.. Eventually,
@@ -561,9 +560,9 @@ def main(arg_dict) -> None:
 
     Parameters
     ---------
-    arg_dict : dict
+    arg_dicts : list[dict]
         Dictionary of arguments for clean passing all arguments. The
-        relevant items are enumerated below.
+        relevant items in each arg_dict are enumerated below.
     arg_dict["model"] : str
         The model to run.
     arg_dict["make_gif"] : bool
@@ -587,8 +586,9 @@ def main(arg_dict) -> None:
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
-    model_obj = MODELS[arg_dict["model"]](arg_dict)
-    model_obj.run_sim()
+    for arg_dict in arg_dicts:
+        model_obj = MODELS[arg_dict["model"]](arg_dict)
+        model_obj.run_sim()
     shutil.rmtree(TMP_DIR)
 
 
@@ -712,5 +712,5 @@ if __name__ == "__main__":
         LOG.error("SEARCH_RADIUS must be odd")
         sys.exit(1)
     # Run main
-    main(vars(args))
+    main([vars(args)])
     logging.shutdown()
