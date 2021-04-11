@@ -67,14 +67,6 @@ class Agent():
         """Return a string of the agent"""
         return f"Agent color {self.color} at position {self.pos}"
 
-    def add_friend(self, friend: Agent) -> None:
-        """Add a friend to the friends list
-
-        friend : Agent
-            Friend to be added
-        """
-        self.friends.append(friend)
-
 
 class SegregationModel(ABC):
     """Abstract class for the segregation model interface.
@@ -110,7 +102,12 @@ class SegregationModel(ABC):
         self.iteration = 0
         self.step = 0
         self.happiness = np.zeros((self.iterations, self.max_epochs + 1))
-        self.init_population()
+        # These are used in `init_population`
+        self.env = None
+        self.population = None
+        self.blue_agents = None
+        self.red_agents = None
+        self.empty_cells = None
         self.file_prefix = "segregation_model"
         self.model_name = "Segregation Model"
         # This gets initialized in a function but the linter doesn't like that
@@ -466,12 +463,20 @@ class SocialModel(SegregationModel):
     def __init__(self, arg_dict):
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
-        self.search_radius = arg_dict["search_radius"]
+        self.search_radius = arg_dict["search_radius"] // 2
         self.file_prefix = str(f"social_policy_{self.grid_size}L_"
                                f"{self.num_agents}N_{self.min_neighbors}k_"
                                f"{self.num_friends}p_{self.search_radius}n")
         self.model_name = "Social Policy"
-        # TODO: Pick out friends
+
+    def init_population(self) -> None:
+        """Initialize the population with friends"""
+        super().init_population()
+        for agent in self.population:
+            indeces = list(range(len(self.population)))
+            random.shuffle(indeces)
+            for i in indeces[:self.num_friends]:
+                agent.friends.append(self.population[i])
 
     def move_policy(self, agent: Agent) -> bool:
         """Randomly choose a tile within a friend's search radius.
@@ -488,31 +493,52 @@ class SocialModel(SegregationModel):
         """
 
         # If already happy, don't move
-        happy, matching_neighbors = self.agent_stats(agent)
+        happy, _ = self.agent_stats(agent)
         if happy:
             return False
-        np.random.shuffle(self.empty_cells)
-        best_cell = agent
-        best_matching_neighbors = matching_neighbors
-        for i, cell in enumerate(self.empty_cells):
 
-            # Swap the cells, check happiness, then swap back
-            self.swap_cells(agent, cell)
-            happy, matching_neighbors = self.agent_stats(agent)
-            self.swap_cells(agent, cell)
+        # Get friend recommendations
+        recommendations = list()
+        for friend in agent.friends:
+            recommendations += self.make_recommendation(agent, friend)
 
-            # Check for exit conditions
-            if matching_neighbors > best_matching_neighbors:
-                best_cell = cell
-                best_matching_neighbors = matching_neighbors
-            if happy:
-                break
-            if i >= MAX_SEARCHES:
-                break
+        # If no recommendations, don't move
+        if len(recommendations) == 0:
+            return False
 
-        # Swap with the best cell and report success
-        self.swap_cells(agent, best_cell)
+        # Choose a random recommendation
+        random.shuffle(recommendations)
+        self.swap_cells(agent, recommendations[0])
         return True
+
+    def make_recommendation(self, agent: Agent, friend: Agent) -> list[Agent]:
+        """Make recommendations for `agent` within `search_radius` of `friend`
+
+        Parameters
+        ----------
+        agent : Agent
+            Agent which needs recommendations
+        friend: Agent
+            Agent to give recommendations
+
+        Returns
+        -------
+        list[Agent]
+            A list of empty cells which make `agent` happy
+        """
+        recommendations = list()
+        for i in range(-self.search_radius, self.search_radius + 1):
+            for j in range(-self.search_radius, self.search_radius + 1):
+                if i == 0 and j == 0:
+                    continue
+                row = (friend.pos[0] + i) % self.grid_size
+                col = (friend.pos[1] + j) % self.grid_size
+                cell = self.env[row][col]
+                if cell in self.empty_cells:
+                    temp_agent = Agent(np.copy(agent.color), np.copy(cell.pos))
+                    if self.agent_stats(temp_agent)[0]:
+                        recommendations.append(cell)
+        return recommendations
 
 
 ################################################################################
@@ -520,10 +546,6 @@ class SocialModel(SegregationModel):
 ################################################################################
 
 # These have to be here because Python does not support forward declaration...
-# MODEL_NAMES = [
-# "random",
-# "social",
-# ]
 MODELS = {
     "random": RandomModel,
     "social": SocialModel,
