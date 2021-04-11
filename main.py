@@ -1,6 +1,14 @@
+#! /usr/bin/env python
 # -*- coding: utf-8 -*-
-"""This module is the main module.
+################################################################################
+# Authors: Wayne Stegner, Zuguang Liu, and Siddharth Barve
+# Course: EECE7065
+# Assignment: Homework 2 - Schelling Segregation Model
+################################################################################
+"""This module is the main module for the segregation model.
+TODO: Usage, etc.
 """
+from __future__ import annotations
 import logging
 import pathlib
 import shutil
@@ -20,9 +28,14 @@ from PIL import Image
 LOG = logging.getLogger(__name__)
 
 # File/directory locations
-PROJ_DIR = pathlib.Path(__file__).parent.absolute()
-IMAGE_DIR = PROJ_DIR.joinpath('img')
+PROJ_DIR = pathlib.Path(__file__).parent.resolve()
+IMAGE_DIR = PROJ_DIR.joinpath("img")
 IMAGE_DIR.mkdir(mode=0o775, exist_ok=True)
+if pathlib.Path("/tmp").exists():
+    TMP_DIR = pathlib.Path("/tmp/segregation_model").resolve()
+else:
+    TMP_DIR = IMAGE_DIR.joinpath("tmp")
+TMP_DIR.mkdir(mode=0o775, exist_ok=True)
 
 # Simulation constants
 MAX_SEARCHES = 100  # The parameter Q, used in the random policy
@@ -35,11 +48,39 @@ EMPTY = np.array([0, 0, 0])
 ################################################################################
 
 
+class Agent():
+    """Class for holding agent information
+
+    Parameters
+    ----------
+    color : np.ndarray
+        The color of the agent
+    pos : np.ndarray
+        The initial position of the agent
+    """
+    def __init__(self, color: np.ndarray, pos: np.ndarray):
+        self.color = color
+        self.pos = pos
+        self.friends = list()
+
+    def __str__(self) -> str:
+        """Return a string of the agent"""
+        return f"Agent color {self.color} at position {self.pos}"
+
+    def add_friend(self, friend: Agent) -> None:
+        """Add a friend to the friends list
+
+        friend : Agent
+            Friend to be added
+        """
+        self.friends.append(friend)
+
+
 class SegregationModel(ABC):
     """Abstract class for the segregation model interface.
 
     Parameters
-    ---------
+    ----------
     arg_dict : dict
         Dictionary of arguments for clean passing all arguments. The
         relevant items are enumerated below.
@@ -69,16 +110,16 @@ class SegregationModel(ABC):
         self.iteration = 0
         self.step = 0
         self.happiness = np.zeros((self.iterations, self.max_epochs + 1))
-        self.init_env()
+        self.init_population()
         self.file_prefix = "segregation_model"
+        self.model_name = "Segregation Model"
         # This gets initialized in a function but the linter doesn't like that
-        self.temp_gif_dir = IMAGE_DIR.joinpath(self.file_prefix)
+        self.temp_gif_dir = TMP_DIR.joinpath(self.file_prefix)
 
     def run_sim(self):
         """Run the simulation with the parameters of the object."""
-        LOG.info(f"Starting simulation for {self.file_prefix}")
+        LOG.info(f"Starting simulation for {self.model_name}")
         # Clear old gifs from this policy
-        # TODO: (#3) Should we do this? Might be a bit aggressive
         for path in list(IMAGE_DIR.glob(f"{self.file_prefix}*")):
             if path.is_dir():
                 shutil.rmtree(path)
@@ -88,7 +129,7 @@ class SegregationModel(ABC):
             # TODO: (#4) This could be better with progress bars
             LOG.info(f"Begin iteration {self.iteration+1} of "
                      f"{self.iterations}")
-            self.init_env()
+            self.init_population()
             self.step = 0
             self.epoch = 0
             self.make_temp_gif_dir()
@@ -97,31 +138,27 @@ class SegregationModel(ABC):
             for self.epoch in range(1, self.max_epochs + 1):
                 # TODO: (#4) Again, could be better with progress bars
                 LOG.info(f"Begin epoch {self.epoch} of {self.max_epochs}")
-                agent_cells = np.concatenate((self.get_matching_coords(RED),
-                                              self.get_matching_coords(BLUE)))
-                np.random.shuffle(agent_cells)
-                for agent in agent_cells:
-                    agent = tuple(agent)
-                    if ((not self.cell_stats(agent, self.env[agent])[0])
-                            and self.move_policy(agent)):
+                random.shuffle(self.population)
+                for agent in self.population:
+                    if self.move_policy(agent):
                         self.step += 1
                         self.save_env()
                 self.log_happiness()
             self.save_gif()
             shutil.rmtree(self.temp_gif_dir, ignore_errors=True)
         self.save_happiness()
-        LOG.info(f"Completed simulation for {self.file_prefix}")
+        LOG.info(f"Completed simulation for {self.model_name}")
 
     @abstractmethod
-    def move_policy(self, agent_coord: tuple[int]) -> bool:
+    def move_policy(self, agent: Agent) -> bool:
         """Find a place to move for the given agent.
 
         This must be implemented for each policy.
 
         Parameters
         ----------
-        agent_coord : tuple[int]
-            Coordinates of the agent to move.
+        agent : Agent
+            The agent to move.
 
         Returns
         -------
@@ -130,99 +167,110 @@ class SegregationModel(ABC):
         """
         ...
 
-    def init_env(self):
-        """Initialize `self.env`."""
-        self.env = np.zeros((self.grid_size, self.grid_size, 3))
-        coords = [(i, j) for i in range(self.grid_size)
-                  for j in range(self.grid_size)]
-        random.shuffle(coords)
+    def init_population(self):
+        """Initialize `self.population`."""
+        self.env = np.empty((self.grid_size, self.grid_size), dtype=object)
+        self.population = list()
+        self.blue_agents = list()
+        self.red_agents = list()
+        self.empty_cells = list()
+        coords = self.get_coords()
+        np.random.shuffle(coords)
         for i, coord in enumerate(coords):
             if i < (self.num_agents // 2):
-                self.env[coord] = BLUE
+                self.population.append(Agent(BLUE, coord))
+                self.blue_agents.append(self.population[-1])
+                self.env[tuple(coord)] = self.population[-1]
             elif i < self.num_agents:
-                self.env[coord] = RED
+                self.population.append(Agent(RED, coord))
+                self.red_agents.append(self.population[-1])
+                self.env[tuple(coord)] = self.population[-1]
             else:
-                self.env[coord] = EMPTY
+                self.empty_cells.append(Agent(EMPTY, coord))
+                self.env[tuple(coord)] = self.empty_cells[-1]
 
-    def swap_cells(self, coord1: tuple[int], coord2: tuple[int]) -> None:
-        """Swap 2 cells in place in `self.env`.
-
-        Parameters
-        ----------
-        coord1, coord2 : np.ndarray
-            The coordinates of the cells to swap in the form (x, y).
-        """
-        temp_cell = np.copy(self.env[coord1])
-        self.env[coord1] = np.copy(self.env[coord2])
-        self.env[coord2] = temp_cell
-
-    def cell_stats(
-        self,
-        agent_coord: tuple[int],
-        agent_type: np.ndarray,
-    ) -> tuple[bool, int]:
-        """Check the stats of a cell for a given agent type.
-
-        Status includes whether or not the given `agent_type` is happy
-        at `agent_coord`, as well as how many neighbors are the same
-        type. The agent is happy if at least `num_agents` neighbors are
-        of type `agent_type` surrounding `agent_coord`.
-
-        Parameters
-        ----------
-        agent_coord : tuple[int]
-            Coordinates of the agent to check.
-        agent_type : np.ndarray
-            Type of the agent to check. This is not derived from
-            `agent_coord` to facilitate scouting potential moves without
-            actually doing the move.
-
-        Returns
-        -------
-        tuple[bool, int]
-            A tuple containing a bool indicating whether the agent of
-            type `agent_type` is happy at `agent_coord` and an int
-            showing the number of neighbors of type `agent_type`.
-        """
-        agent_type = self.env[agent_coord]
-        matching_neighbors = 0
-        for i in [-1, 0, 1]:
-            for j in [-1, 0, 1]:
-                if i == 0 and j == 0:
-                    continue
-                if (self.env[(agent_coord[0] + i) % self.grid_size,
-                             (agent_coord[1] + j) %
-                             self.grid_size] == agent_type).all():
-                    matching_neighbors += 1
-        return ((matching_neighbors >= self.min_neighbors), matching_neighbors)
-
-    def get_matching_coords(self, agent_type: np.ndarray) -> np.ndarray:
-        """Get a list of coordinates matching agent_type.
-
-        Parameters
-        ----------
-        agent_type : np.ndarray
-            The agent type, either `RED`, `BLUE`, or `EMPTY`. These are
-            in the form [red_val, green_val, blue_val].
+    def get_coords(self) -> np.ndarray:
+        """Get a list of coordinates for the env grid
 
         Returns
         -------
         np.ndarray
-            Array of coordinates of cells containing agent_type in the form
-            [[x0, y0], [x1, y1], ...].
+            Array in the form [[0,0], [0,1], ..., [0,self.grid_size], ...,
+            [self.grid_size,self.grid_size]]
         """
-        return np.array([(i, j) for i in range(self.grid_size)
-                         for j in range(self.grid_size)
-                         if (self.env[i, j] == agent_type).all()])
+        num_grids = self.grid_size * self.grid_size
+        return np.mgrid[0:self.grid_size,
+                        0:self.grid_size].reshape(2, num_grids).transpose()
+
+    def swap_cells(self, agent1: Agent, agent2: Agent) -> None:
+        """Swap 2 cells in place in `self.env`.
+
+        Parameters
+        ----------
+        agent1, agent2 : Agent
+            The agents to swap in place
+        """
+        agent1.pos, agent2.pos = agent2.pos, agent1.pos
+        self.env[tuple(agent1.pos)] = agent1
+        self.env[tuple(agent2.pos)] = agent2
+
+    def get_neighbors(self, agent: Agent) -> list[Agent]:
+        """Return a list of neighboring agents
+
+        Parameters
+        ----------
+        agent : Agent
+            The agent to find neighbors of
+
+        Returns
+        -------
+        list[Agent]
+            List of agents neighboring `agent`
+        """
+        neighbors = list()
+        for i in [-1, 0, 1]:
+            for j in [-1, 0, 1]:
+                if i == 0 and j == 0:
+                    continue
+                cell = self.env[(agent.pos[0] + i) % self.grid_size,
+                                (agent.pos[1] + j) % self.grid_size]
+                if cell:
+                    neighbors.append(cell)
+        return neighbors
+
+    def agent_stats(self, agent: Agent) -> tuple[bool, int]:
+        """Check the stats of an agent.
+
+        Status includes whether or not `agent` is happy, as well as how
+        many neighbors are the same type. The agent is happy if at
+        least `self.num_agents` neighbors are of type `agent.color`
+        surrounding `agent.pos`.
+
+        Parameters
+        ----------
+        agent : Agent
+            The agent to check.
+
+        Returns
+        -------
+        tuple[bool, int]
+            A tuple containing a bool indicating whether `agent` is
+            happy and an int showing the number of neighbors of the
+            same color.
+        """
+        matching_neighbors = 0
+        neighbors = self.get_neighbors(agent)
+        for neighbor in neighbors:
+            if (neighbor.color == agent.color).all():
+                matching_neighbors += 1
+        return ((matching_neighbors >= self.min_neighbors), matching_neighbors)
 
     def log_happiness(self):
         """Log the portion of happy agents."""
-        agent_cells = np.concatenate(
-            (self.get_matching_coords(RED), self.get_matching_coords(BLUE)))
+        LOG.debug("Logging happiness")
         happy_agents = 0
-        for agent in agent_cells:
-            agent = tuple(agent)
-            happy, _ = self.cell_stats(agent, self.env[agent])
+        for agent in self.population:
+            happy, _ = self.agent_stats(agent)
             if happy:
                 happy_agents += 1
         happy_portion = happy_agents / self.num_agents
@@ -241,11 +289,17 @@ class SegregationModel(ABC):
         """Save a single frame image."""
         if not self.make_gif:
             return
+        LOG.debug("Saving environment frame")
+        # Draw the env
+        env = np.zeros((self.grid_size, self.grid_size, 3))
+        for i, row in enumerate(self.env):
+            for j, agent in enumerate(row):
+                env[i][j] = agent.color
         # Create the plot/image
         fig, axis = plt.subplots()
-        axis.imshow(self.env)
+        axis.imshow(env)
         axis.axis("off")
-        axis.set_title(f"{self.file_prefix} epoch {self.epoch}\n"
+        axis.set_title(f"{self.model_name} epoch {self.epoch}\n"
                        f"step {self.step:06d}")
         # Save the figure as a PNG
         fig.savefig(self.temp_gif_dir.joinpath(f"step_{self.step:06d}"))
@@ -276,6 +330,7 @@ class SegregationModel(ABC):
 
     def save_happiness(self) -> None:
         """Save a plot of mean happiness and standard deviation."""
+        LOG.debug("Creating happiness plot")
         # Calculate metrics to be plotted
         mean = self.happiness.mean(axis=0)
         stdev = self.happiness.std(axis=0)
@@ -288,7 +343,7 @@ class SegregationModel(ABC):
         axis.set_xlim([0, self.max_epochs])
         axis.set_xticks(epochs)
         axis.set_ylabel("Happiness")
-        axis.set_title(f"{self.file_prefix} mean happiness vs epoch number")
+        axis.set_title(f"{self.model_name} mean happiness vs epoch number")
         plt_path = IMAGE_DIR.joinpath(f"{self.file_prefix}_happiness.png")
         fig.savefig(plt_path)
         fig.clf()
@@ -326,9 +381,11 @@ class RandomModel(SegregationModel):
     """
     def __init__(self, arg_dict: dict):
         super().__init__(arg_dict)
-        self.file_prefix = "random_policy"
+        self.file_prefix = str(f"random_policy_{self.grid_size}L_"
+                               f"{self.num_agents}N_{self.min_neighbors}k")
+        self.model_name = "Random Policy"
 
-    def move_policy(self, agent_coord: tuple[int]) -> bool:
+    def move_policy(self, agent: Agent) -> bool:
         """Randomly choose a tile that makes the agent happy.
 
         If the agent cannot be happy in MAX_SEARCHES, it chooses the one it
@@ -336,40 +393,49 @@ class RandomModel(SegregationModel):
 
         Parameters
         ----------
-        agent_coord : tuple[int]
-            Coordinates of the agent to move.
+        agent : Agent
+            The agent to move.
 
         Returns
         -------
         bool
             True if the agent moved, else False.
         """
-        agent_type = self.env[agent_coord]
-        # Get randomized list of empty cells
-        empty_cells = self.get_matching_coords(EMPTY)
-        np.random.shuffle(empty_cells)
-        best_cell = tuple(empty_cells[0])
-        _, best_cell_matching_neighbors = self.cell_stats(
-            agent_coord, agent_type)
-        for i, cell in enumerate(empty_cells):
-            cell = tuple(cell)
-            happy, matching_neighbors = self.cell_stats(
-                agent_coord, agent_type)
-            if matching_neighbors > best_cell_matching_neighbors:
+
+        # If already happy, don't move
+        happy, matching_neighbors = self.agent_stats(agent)
+        if happy:
+            return False
+        np.random.shuffle(self.empty_cells)
+        best_cell = agent
+        best_matching_neighbors = matching_neighbors
+        for i, cell in enumerate(self.empty_cells):
+
+            # Swap the cells, check happiness, then swap back
+            self.swap_cells(agent, cell)
+            happy, matching_neighbors = self.agent_stats(agent)
+            self.swap_cells(agent, cell)
+
+            # Check for exit conditions
+            if matching_neighbors > best_matching_neighbors:
                 best_cell = cell
-                best_cell_matching_neighbors = matching_neighbors
+                best_matching_neighbors = matching_neighbors
             if happy:
                 break
             if i >= MAX_SEARCHES:
                 break
-        self.swap_cells(agent_coord, best_cell)
+
+        # Swap with the best cell and report success
+        self.swap_cells(agent, best_cell)
         return True
 
 
 class SocialModel(SegregationModel):
     """Segregation model which implements the social policy.
 
-    TODO: Extended summary
+    At the beginning, each agent randomly picks `num_friends` friends.
+    Each move, the agent polls its friends for available locations
+    which will make it happy, and it randomly picks one.
 
     Parameters
     ---------
@@ -401,25 +467,52 @@ class SocialModel(SegregationModel):
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
         self.search_radius = arg_dict["search_radius"]
-        self.file_prefix = "social_policy"
+        self.file_prefix = str(f"social_policy_{self.grid_size}L_"
+                               f"{self.num_agents}N_{self.min_neighbors}k_"
+                               f"{self.num_friends}p_{self.search_radius}n")
+        self.model_name = "Social Policy"
+        # TODO: Pick out friends
 
-    def move_policy(self, agent_coord: tuple[int]) -> bool:
-        """Randomly choose a tile that makes the agent happy.
-
-        If the agent cannot be happy in MAX_SEARCHES, it chooses the one it
-        saw which has the most neighbors of the same type.
+    def move_policy(self, agent: Agent) -> bool:
+        """Randomly choose a tile within a friend's search radius.
 
         Parameters
         ----------
-        agent_coord : tuple[int]
-            Coordinates of the agent to move.
+        agent : Agent
+            The agent to move.
 
         Returns
         -------
         bool
             True if the agent moved, else False.
         """
-        return False
+
+        # If already happy, don't move
+        happy, matching_neighbors = self.agent_stats(agent)
+        if happy:
+            return False
+        np.random.shuffle(self.empty_cells)
+        best_cell = agent
+        best_matching_neighbors = matching_neighbors
+        for i, cell in enumerate(self.empty_cells):
+
+            # Swap the cells, check happiness, then swap back
+            self.swap_cells(agent, cell)
+            happy, matching_neighbors = self.agent_stats(agent)
+            self.swap_cells(agent, cell)
+
+            # Check for exit conditions
+            if matching_neighbors > best_matching_neighbors:
+                best_cell = cell
+                best_matching_neighbors = matching_neighbors
+            if happy:
+                break
+            if i >= MAX_SEARCHES:
+                break
+
+        # Swap with the best cell and report success
+        self.swap_cells(agent, best_cell)
+        return True
 
 
 ################################################################################
@@ -437,7 +530,7 @@ MODELS = {
 }
 
 
-def main(args) -> None:
+def main(arg_dict) -> None:
     """Main function.
 
     The main function handles starting the correct model.. Eventually,
@@ -446,34 +539,35 @@ def main(args) -> None:
 
     Parameters
     ---------
-    args : dict
+    arg_dict : dict
         Dictionary of arguments for clean passing all arguments. The
         relevant items are enumerated below.
-    args["model"] : str
+    arg_dict["model"] : str
         The model to run.
-    args["make_gif"] : bool
+    arg_dict["make_gif"] : bool
         Whether or not to save a gif. Saving a gif takes significantly
         longer.
-    args["grid_size"] : int
+    arg_dict["grid_size"] : int
         Size of the environment grid (the length).
-    args["min_neighbors"] : int
+    arg_dict["min_neighbors"] : int
         Minimum neighbors of the same type to be happy.
-    args["num_agents"] : int
+    arg_dict["num_agents"] : int
         Number of agents to populate the grid.
-    args["max_epochs"] : int
+    arg_dict["max_epochs"] : int
         Maximum epochs for each iteration. One epoch is one time
         through the population of agents.
-    args["iterations"] : int
+    arg_dict["iterations"] : int
         Number of iterations to run the simulation.
-    args["num_friends"] : int
+    arg_dict["num_friends"] : int
         Number of friends for each agent for "social" policy. Different
         policies may use this differently if desired.
-    args["search_radius"] : int
+    arg_dict["search_radius"] : int
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
-    model_obj = MODELS[args["model"]](args)
+    model_obj = MODELS[arg_dict["model"]](arg_dict)
     model_obj.run_sim()
+    shutil.rmtree(TMP_DIR)
 
 
 def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
