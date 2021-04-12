@@ -8,16 +8,19 @@
 """This module is the main module for the segregation model.
 TODO: Usage, etc.
 """
+# Standard library
 from __future__ import annotations
+import argparse
+import configparser
 import logging
 import pathlib
-import shutil
-import argparse
 import random
+import shutil
 from abc import ABC, abstractmethod
+# Packages
 import coloredlogs
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
 
 ################################################################################
@@ -454,18 +457,18 @@ class SocialModel(SegregationModel):
     arg_dict["num_friends"] : int
         Number of friends for each agent for "social" policy. Different
         policies may use this differently if desired.
-    arg_dict["search_radius"] : int
+    arg_dict["search_diameter"] : int
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
     def __init__(self, arg_dict):
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
-        self.search_radius = arg_dict["search_radius"] // 2
+        self.search_diameter = arg_dict["search_diameter"] // 2
         self.file_prefix = str(
             f"social_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
-            f"{self.num_friends}p_{self.search_radius*2+1}n")
+            f"{self.num_friends}p_{self.search_diameter*2+1}n")
         self.model_name = "Social Policy"
 
     def init_population(self) -> None:
@@ -511,7 +514,7 @@ class SocialModel(SegregationModel):
         return True
 
     def make_recommendation(self, agent: Agent, friend: Agent) -> list[Agent]:
-        """Make recommendations for `agent` within `search_radius` of `friend`
+        """Make recommendations for `agent` within `search_diameter` of `friend`
 
         Parameters
         ----------
@@ -526,8 +529,8 @@ class SocialModel(SegregationModel):
             A list of empty cells which make `agent` happy
         """
         recommendations = list()
-        for i in range(-self.search_radius, self.search_radius + 1):
-            for j in range(-self.search_radius, self.search_radius + 1):
+        for i in range(-self.search_diameter, self.search_diameter + 1):
+            for j in range(-self.search_diameter, self.search_diameter + 1):
                 if i == 0 and j == 0:
                     continue
                 row = (friend.pos[0] + i) % self.grid_size
@@ -582,7 +585,7 @@ def main(arg_dicts: list[dict]) -> None:
     arg_dict["num_friends"] : int
         Number of friends for each agent for "social" policy. Different
         policies may use this differently if desired.
-    arg_dict["search_radius"] : int
+    arg_dict["search_diameter"] : int
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
@@ -610,10 +613,9 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
-        "model",
-        help="model to run",
+        "config_file",
+        help="config file location relative to current directory",
         type=str,
-        choices=list(MODELS.keys()),
     )
     parser.add_argument(
         "-ll",
@@ -628,65 +630,72 @@ def parse_args(arg_list: list[str] = None) -> argparse.Namespace:
         choices=range(1, 6),
         default=2,
     )
-    parser.add_argument(
-        "-g",
-        "--make_gif",
-        help="create a gif of each iteration\n"
-        "takes much longer - only recommended with -i 1",
-        default=False,
-        action="store_true",
-    )
-    parser.add_argument(
-        "-L",
-        "--grid_size",
-        help="size of the grid (LxL), L >= 3",
-        type=int,
-        default=40,
-    )
-    parser.add_argument(
-        "-k",
-        "--min_neighbors",
-        help="matching neighbors required to be happy",
-        type=int,
-        choices=range(0, 9),
-        default=3,
-    )
-    parser.add_argument(
-        "-N",
-        "--num_agents",
-        help="number of agents in the simulation, 2 <= N < L*L",
-        type=int,
-        default=1440,
-    )
-    parser.add_argument(
-        "-e",
-        "--max_epochs",
-        help="maximum number of simulation epochs",
-        type=int,
-        default=20,
-    )
-    parser.add_argument(
-        "-i",
-        "--iterations",
-        help="number of times to run the simulation",
-        type=int,
-        default=30,
-    )
-    parser.add_argument(
-        "-n",
-        "--num_friends",
-        help="\"social\" policy - number of friends",
-        type=int,
-        default=5,
-    )
-    parser.add_argument(
-        "-p",
-        "--search_radius",
-        help="\"social\" policy - search radius of friend (must be odd)",
-        type=int,
-        default=3,
-    )
     return parser.parse_args(args=arg_list)
+
+
+def parse_config(config_file: str) -> list[dict]:
+    """Parse the config file into a list of dictionaries.
+
+    Parameters
+    ----------
+    config_file : str
+        Path to the configuration file.
+
+    Returns
+    -------
+    list[dict]
+        List of dictionaries holding the configs for each model run.
+        Each dictionary will have each parameter as a key and the value
+        as the value. Returns None on read error.
+    """
+    # Make sure config file exists
+    config_file = pathlib.Path(config_file).resolve()
+    if not config_file.exists():
+        LOG.error(f"Config file not found {str(config_file)}")
+        return None
+
+    # Set up parser and read each section
+    parser = configparser.ConfigParser()
+    parser.read(config_file)
+    configs = list()
+    for section in parser.sections():
+        config = dict()
+        config["model"] = str(parser[section]["model"])
+        # If not "True" it will be assumed false
+        config["make_gif"] = parser[section]["make_gif"] == "True"
+        config["grid_size"] = int(parser[section]["grid_size"])
+        if config["grid_size"] < 2:
+            LOG.error("grid_size must be at least 2")
+            return None
+        config["min_neighbors"] = int(parser[section]["min_neighbors"])
+        if config["min_neighbors"] < 0 or config["min_neighbors"] > 8:
+            LOG.error("min_neighbors must be in the interval [0, 8]")
+            return None
+        config["num_agents"] = int(parser[section]["num_agents"])
+        if (config["num_agents"] < 2) or (config["num_agents"] >=
+                                          config["grid_size"]**2):
+            LOG.error("num_agents must be in the interval [2,"
+                      " grid_size*grid_size)")
+            return None
+        config["max_epochs"] = int(parser[section]["max_epochs"])
+        if config["max_epochs"] < 1:
+            LOG.error("max_epochs must be at least 1")
+            return None
+        config["iterations"] = int(parser[section]["iterations"])
+        if config["iterations"] < 1:
+            LOG.error("iterations must be at least 1")
+            return None
+        config["num_friends"] = int(parser[section]["num_friends"])
+        if config["num_friends"] < 0:
+            LOG.error("num_friends must be at least 0")
+            return None
+        config["search_diameter"] = int(parser[section]["search_diameter"])
+        if (config["search_diameter"] < 1) or ((config["search_diameter"] % 2)
+                                               == 0):
+            LOG.error("search_diameter must be at least 1 and odd")
+            return None
+        configs.append(config)
+    return configs
 
 
 if __name__ == "__main__":
@@ -695,22 +704,10 @@ if __name__ == "__main__":
     coloredlogs.install(level=args.log_level * 10,
                         logger=LOG,
                         milliseconds=True)
-    # Check boundaries on arguments
-    if args.grid_size < 2:
-        LOG.error("GRID_SIZE must be at least 2")
-        sys.exit(1)
-    if args.num_agents < 2 or args.num_agents >= args.grid_size**2:
-        LOG.error("NUM_AGENTS must be in the interval [2, L*L)")
-        sys.exit(1)
-    if args.num_friends < 0:
-        LOG.error("NUM_FRIENDS must be at least 0")
-        sys.exit(1)
-    if args.search_radius < 3:
-        LOG.error("SEARCH_RADIUS must be at least 3")
-        sys.exit(1)
-    if (args.search_radius % 2) == 0:
-        LOG.error("SEARCH_RADIUS must be odd")
+    configs = parse_config(args.config_file)
+    if configs is None:
+        LOG.error(f"Error reading config file {args.config_file}")
         sys.exit(1)
     # Run main
-    main([vars(args)])
+    main(configs)
     logging.shutdown()
