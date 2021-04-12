@@ -554,7 +554,7 @@ MODELS = {
 }
 
 
-def main(arg_dicts: list[dict]) -> None:
+def main(arg_dicts: list[dict], plot_name: str, plot_path: pathlib.Path) -> None:
     """Main function.
 
     The main function handles starting the correct model.. Eventually,
@@ -589,9 +589,30 @@ def main(arg_dicts: list[dict]) -> None:
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
+    # Run all the models
+    models = list()
     for arg_dict in arg_dicts:
-        model_obj = MODELS[arg_dict["model"]](arg_dict)
-        model_obj.run_sim()
+        models.append(MODELS[arg_dict["model"]](arg_dict))
+        models[-1].run_sim()
+
+    # Plot the averages against each other
+    fig, axis = plt.subplots()
+    axis.set_xlabel("Epoch")
+    axis.set_xlim([0, models[0].max_epochs])
+    epochs = np.arange(models[0].max_epochs + 1)
+    axis.set_xticks(epochs)
+    axis.set_ylabel("Happiness")
+    axis.set_title(f"{plot_name} mean happiness vs epoch number")
+    for model in models:
+        mean = model.happiness.mean(axis=0)
+        stdev = model.happiness.std(axis=0)
+        # TODO: (#5) If someone wants to make this look nicer, PLEASE DO!
+        axis.errorbar(epochs, mean, yerr=stdev, label=model.file_prefix)
+    plt_path = IMAGE_DIR.joinpath(plot_path)
+    fig.legend(loc="lower right")
+    fig.savefig(plt_path)
+    fig.clf()
+    plt.close()
     shutil.rmtree(TMP_DIR)
 
 
@@ -709,5 +730,9 @@ if __name__ == "__main__":
         LOG.error(f"Error reading config file {args.config_file}")
         sys.exit(1)
     # Run main
-    main(configs)
+    config_file = pathlib.Path(args.config_file).resolve()
+    plot_name = config_file.stem
+    plot_path = IMAGE_DIR.joinpath(f"{plot_name}_happiness.png")
+    plot_name = plot_name.replace("_", " ").capitalize()
+    main(configs, plot_name, plot_path)
     logging.shutdown()
