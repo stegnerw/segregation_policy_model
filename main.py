@@ -113,6 +113,7 @@ class SegregationModel(ABC):
         self.empty_cells = None
         self.file_prefix = "segregation_model"
         self.model_name = "Segregation Model"
+        self.legend_name = "Base model"
         # This gets initialized in a function but the linter doesn't like that
         self.temp_gif_dir = TMP_DIR.joinpath(self.file_prefix)
 
@@ -343,7 +344,7 @@ class SegregationModel(ABC):
         axis.set_ylabel("Happiness")
         axis.set_title(f"{self.model_name} mean happiness vs epoch number")
         plt_path = IMAGE_DIR.joinpath(f"{self.file_prefix}_happiness.png")
-        fig.savefig(plt_path)
+        fig.savefig(plt_path, dpi=500)
         fig.clf()
         plt.close()
         LOG.info("The mean happiness time series plot has been saved in:\n"
@@ -382,6 +383,7 @@ class RandomModel(SegregationModel):
         self.file_prefix = str(f"random_policy_{self.grid_size}L_"
                                f"{self.num_agents}N_{self.min_neighbors}k")
         self.model_name = "Random Policy"
+        self.legend_name = "Random"
 
     def move_policy(self, agent: Agent) -> bool:
         """Randomly choose a tile that makes the agent happy.
@@ -470,6 +472,8 @@ class SocialModel(SegregationModel):
             f"{self.num_agents}N_{self.min_neighbors}k_"
             f"{self.num_friends}p_{self.search_diameter*2+1}n")
         self.model_name = "Social Policy"
+        self.legend_name = str(f"Social n={self.search_diameter*2+1} "
+                               f"p={self.num_friends}")
 
     def init_population(self) -> None:
         """Initialize the population with friends"""
@@ -607,10 +611,10 @@ def main(arg_dicts: list[dict], plot_name: str, plot_path: pathlib.Path) -> None
         mean = model.happiness.mean(axis=0)
         stdev = model.happiness.std(axis=0)
         # TODO: (#5) If someone wants to make this look nicer, PLEASE DO!
-        axis.errorbar(epochs, mean, yerr=stdev, label=model.file_prefix)
+        axis.errorbar(epochs, mean, yerr=stdev, label=model.legend_name, linewidth=0.5)
     plt_path = IMAGE_DIR.joinpath(plot_path)
     fig.legend(loc="lower right")
-    fig.savefig(plt_path)
+    fig.savefig(plt_path, dpi=500)
     fig.clf()
     plt.close()
     shutil.rmtree(TMP_DIR)
