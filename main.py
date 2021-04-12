@@ -547,6 +547,67 @@ class SocialModel(SegregationModel):
         return recommendations
 
 
+class ExclusiveSocialModel(SocialModel):
+    """Segregation model which implements the exclusive social policy.
+
+    At the beginning, each agent randomly picks `num_friends` friends.
+    This time, the friends must be the same color as the agent.
+    Each move, the agent polls its friends for available locations
+    which will make it happy, and it randomly picks one.
+
+    Parameters
+    ---------
+    arg_dict : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    arg_dict["make_gif"] : bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
+    arg_dict["grid_size"] : int
+        Size of the environment grid (the length).
+    arg_dict["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    arg_dict["num_agents"] : int
+        Number of agents to populate the grid.
+    arg_dict["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    arg_dict["iterations"] : int
+        Number of iterations to run the simulation.
+    arg_dict["num_friends"] : int
+        Number of friends for each agent for "social" policy. Different
+        policies may use this differently if desired.
+    arg_dict["search_diameter"] : int
+        Search radius of each friend for "social" policy. Different
+        policies may use this differently if desired.
+    """
+    def __init__(self, arg_dict):
+        super().__init__(arg_dict)
+        self.num_friends = arg_dict["num_friends"]
+        self.search_diameter = arg_dict["search_diameter"] // 2
+        self.file_prefix = str(
+            f"exclusive_social_policy_{self.grid_size}L_"
+            f"{self.num_agents}N_{self.min_neighbors}k_"
+            f"{self.num_friends}p_{self.search_diameter*2+1}n")
+        self.model_name = "Exclusive Social Policy"
+        self.legend_name = str(f"Exclusive Social n={self.search_diameter*2+1}"
+                               f" p={self.num_friends}")
+
+    def init_population(self) -> None:
+        """Initialize the population with friends"""
+        super().init_population()
+        for agent in self.blue_agents:
+            indeces = list(range(len(self.blue_agents)))
+            random.shuffle(indeces)
+            for i in indeces[:self.num_friends]:
+                agent.friends.append(self.blue_agents[i])
+        for agent in self.red_agents:
+            indeces = list(range(len(self.red_agents)))
+            random.shuffle(indeces)
+            for i in indeces[:self.num_friends]:
+                agent.friends.append(self.red_agents[i])
+
+
 ################################################################################
 # CLI handler functions
 ################################################################################
@@ -555,10 +616,12 @@ class SocialModel(SegregationModel):
 MODELS = {
     "random": RandomModel,
     "social": SocialModel,
+    "exclusive_social": ExclusiveSocialModel,
 }
 
 
-def main(arg_dicts: list[dict], plot_name: str, plot_path: pathlib.Path) -> None:
+def main(arg_dicts: list[dict], plot_name: str,
+         plot_path: pathlib.Path) -> None:
     """Main function.
 
     The main function handles starting the correct model.. Eventually,
@@ -611,7 +674,11 @@ def main(arg_dicts: list[dict], plot_name: str, plot_path: pathlib.Path) -> None
         mean = model.happiness.mean(axis=0)
         stdev = model.happiness.std(axis=0)
         # TODO: (#5) If someone wants to make this look nicer, PLEASE DO!
-        axis.errorbar(epochs, mean, yerr=stdev, label=model.legend_name, linewidth=0.5)
+        axis.errorbar(epochs,
+                      mean,
+                      yerr=stdev,
+                      label=model.legend_name,
+                      linewidth=0.5)
     plt_path = IMAGE_DIR.joinpath(plot_path)
     fig.legend(loc="lower right")
     fig.savefig(plt_path, dpi=500)
