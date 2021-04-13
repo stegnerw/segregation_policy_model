@@ -470,10 +470,10 @@ class SocialModel(SegregationModel):
         self.file_prefix = str(
             f"social_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
-            f"{self.num_friends}p_{self.search_diameter*2+1}n")
+            f"{self.num_friends}n_{self.search_diameter*2+1}p")
         self.model_name = "Social Policy"
-        self.legend_name = str(f"Social n={self.search_diameter*2+1} "
-                               f"p={self.num_friends}")
+        self.legend_name = str(f"Social p={self.search_diameter*2+1} "
+                               f"n={self.num_friends}")
 
     def init_population(self) -> None:
         """Initialize the population with friends"""
@@ -546,7 +546,93 @@ class SocialModel(SegregationModel):
                         recommendations.append(cell)
         return recommendations
 
+class GreedySocialModel(SocialModel):
+    """Siddharth Barve
+    Segregation model which implements the greedy social policy.
 
+    At the beginning, each agent randomly picks `num_friends` friends.
+    Each move, the agent polls its friends for available locations
+    which will make it happy, and it randomly picks one. If the friends,
+    do not recommend a location, the agent selects new friends.
+
+    Parameters
+    ---------
+    arg_dict : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    arg_dict["make_gif"] : bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
+    arg_dict["grid_size"] : int
+        Size of the environment grid (the length).
+    arg_dict["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    arg_dict["num_agents"] : int
+        Number of agents to populate the grid.
+    arg_dict["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    arg_dict["iterations"] : int
+        Number of iterations to run the simulation.
+    arg_dict["num_friends"] : int
+        Number of friends for each agent for "social" policy. Different
+        policies may use this differently if desired.
+    arg_dict["search_diameter"] : int
+        Search radius of each friend for "social" policy. Different
+        policies may use this differently if desired.
+    """
+    def __init__(self, arg_dict):
+        super().__init__(arg_dict)
+        self.num_friends = arg_dict["num_friends"]
+        self.search_diameter = arg_dict["search_diameter"] // 2
+        self.file_prefix = str(
+            f"greedy_social_policy_{self.grid_size}L_"
+            f"{self.num_agents}N_{self.min_neighbors}k_"
+            f"{self.num_friends}n_{self.search_diameter*2+1}p")
+        self.model_name = "Greedy Social Policy"
+        self.legend_name = str(f"Greedy Social p={self.search_diameter*2+1} "
+                               f"n={self.num_friends}")
+           
+    def init_friends(self,agent):
+        agent.friends=[]
+        indeces = list(range(len(self.population)))
+        random.shuffle(indeces)
+        for i in indeces[:self.num_friends]:
+            agent.friends.append(self.population[i])
+            
+    def move_policy(self, agent: Agent) -> bool:
+        """Randomly choose a tile within a friend's search radius.
+
+        Parameters
+        ----------
+        agent : Agent
+            The agent to move.
+
+        Returns
+        -------
+        bool
+            True if the agent moved, else False.
+        """
+
+        # If already happy, don't move
+        happy, _ = self.agent_stats(agent)
+        if happy:
+            return False
+
+        # Get friend recommendations
+        recommendations = list()
+        while(len(recommendations)==0):
+            for friend in agent.friends:
+                recommendations += self.make_recommendation(agent, friend)
+            #If friends don't make you happy, get new friends.
+            if len(recommendations) == 0:
+                self.init_friends(agent)        
+
+        # Choose a random recommendation
+        random.shuffle(recommendations)
+        self.swap_cells(agent, recommendations[0])
+        return True
+    
 ################################################################################
 # CLI handler functions
 ################################################################################
@@ -555,6 +641,7 @@ class SocialModel(SegregationModel):
 MODELS = {
     "random": RandomModel,
     "social": SocialModel,
+    "greedy_social": GreedySocialModel,
 }
 
 
