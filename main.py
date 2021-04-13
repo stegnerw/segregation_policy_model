@@ -470,10 +470,10 @@ class SocialModel(SegregationModel):
         self.file_prefix = str(
             f"social_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
-            f"{self.num_friends}p_{self.search_diameter*2+1}n")
+            f"{self.num_friends}n_{self.search_diameter*2+1}p")
         self.model_name = "Social Policy"
-        self.legend_name = str(f"Social n={self.search_diameter*2+1} "
-                               f"p={self.num_friends}")
+        self.legend_name = str(f"Social p={self.search_diameter*2+1} "
+                               f"n={self.num_friends}")
 
     def init_population(self) -> None:
         """Initialize the population with friends"""
@@ -588,10 +588,10 @@ class ExclusiveSocialModel(SocialModel):
         self.file_prefix = str(
             f"exclusive_social_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
-            f"{self.num_friends}p_{self.search_diameter*2+1}n")
+            f"{self.num_friends}n_{self.search_diameter*2+1}p")
         self.model_name = "Exclusive Social Policy"
-        self.legend_name = str(f"Exclusive Social n={self.search_diameter*2+1}"
-                               f" p={self.num_friends}")
+        self.legend_name = str(f"Exclusive Social p={self.search_diameter*2+1}"
+                               f" n={self.num_friends}")
 
     def init_population(self) -> None:
         """Initialize the population with friends"""
