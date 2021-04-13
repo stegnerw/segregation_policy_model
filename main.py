@@ -652,8 +652,9 @@ class DisposableFriendModel(SocialModel):
             f"{self.num_agents}N_{self.min_neighbors}k_"
             f"{self.num_friends}n_{self.search_diameter*2+1}p")
         self.model_name = "Disposable Friend Policy"
-        self.legend_name = str(f"Disposable Friend p={self.search_diameter*2+1} "
-                               f"n={self.num_friends}")
+        self.legend_name = str(
+            f"Disposable Friend p={self.search_diameter*2+1} "
+            f"n={self.num_friends}")
 
     def init_friends(self, agent):
         agent.friends = []
@@ -696,6 +697,114 @@ class DisposableFriendModel(SocialModel):
         return True
 
 
+class WeightedRandomModel(SegregationModel):
+    """Zuguang Liu
+    Segregation model which implements the weighted random policy.
+
+    If the agent is unhappy, it searches random empty cells until it
+    finds one which makes it happy, or if it searches `MAX_SEARCHES`
+    it will select the one with the most matching neighbors. The
+    selection will be weighted by the distance from the agent.
+    Parameters
+    ---------
+    arg_dict : dict
+        Dictionary of arguments for clean passing all arguments. The
+        relevant items are enumerated below.
+    arg_dict["make_gif"] : bool
+        Whether or not to save a gif. Saving a gif takes significantly
+        longer.
+    arg_dict["grid_size"] : int
+        Size of the environment grid (the length).
+    arg_dict["min_neighbors"] : int
+        Minimum neighbors of the same type to be happy.
+    arg_dict["num_agents"] : int
+        Number of agents to populate the grid.
+    arg_dict["max_epochs"] : int
+        Maximum epochs for each iteration. One epoch is one time
+        through the population of agents.
+    arg_dict["iterations"] : int
+        Number of iterations to run the simulation.
+    arg_dict["weight_function"] : string
+        Type of weight function (C1, C2, F1, F2)
+    """
+    def __init__(self, arg_dict: dict):
+        super().__init__(arg_dict)
+        self.model_name = "Weighted Random Policy"
+        self.weight_function = arg_dict['weight_function']
+        self.legend_name = f"Weighted Random with {self.weight_function}"
+        self.file_prefix = str(f"weighted_random_policy_{self.grid_size}L_"
+                               f"{self.num_agents}N_{self.min_neighbors}k_"
+                               f"{self.weight_function}")
+
+    def move_policy(self, agent: Agent) -> bool:
+        """Randomly choose a tile that makes the agent happy.
+        If the agent cannot be happy in MAX_SEARCHES, it chooses the one it
+        saw which has the most neighbors of the same type.
+        Parameters
+        ----------
+        agent : Agent
+            The agent to move.
+        Returns
+        -------
+        bool
+            True if the agent moved, else False.
+        """
+
+        # If already happy, don't move
+        happy, matching_neighbors = self.agent_stats(agent)
+        if happy:
+            return False
+        np.random.shuffle(self.empty_cells)
+
+        # Initialize for weighted random policy
+        max_distance = np.linalg.norm([self.grid_size, self.grid_size])
+        best_cell = agent
+        if self.weight_function[0] == 'C':
+            best_matching_neighbors = 1.0 * matching_neighbors / 8
+        elif self.weight_function[0] == 'F':
+            best_matching_neighbors = 0.001 * matching_neighbors / 8
+        for i, cell in enumerate(self.empty_cells):
+
+            # Swap the cells, check happiness, then swap back
+            self.swap_cells(agent, cell)
+            happy, matching_neighbors = self.agent_stats(agent)
+            self.swap_cells(agent, cell)
+
+            # Weight the neighbors index
+            wrapped_distance = np.abs(cell.pos - agent.pos)
+
+            if wrapped_distance[0] > self.grid_size / 2:
+                wrapped_distance[0] = self.grid_size - wrapped_distance[0]
+            if wrapped_distance[1] > self.grid_size / 2:
+                wrapped_distance[1] = self.grid_size - wrapped_distance[1]
+
+            wrapped_distance = np.linalg.norm(wrapped_distance)
+
+            if self.weight_function == "C1":
+                cell_weight = 1 - wrapped_distance / max_distance
+            elif self.weight_function == "C2":
+                cell_weight = (1 - wrapped_distance / max_distance)**2
+            elif self.weight_function == "F1":
+                cell_weight = wrapped_distance / max_distance
+            elif self.weight_function == "F2":
+                cell_weight = (wrapped_distance / max_distance)**2
+
+            matching_neighbors = cell_weight * matching_neighbors / 8
+
+            # Check for exit conditions
+            if matching_neighbors > best_matching_neighbors:
+                best_cell = cell
+                best_matching_neighbors = matching_neighbors
+            if happy:
+                break
+            if i >= MAX_SEARCHES:
+                break
+
+        # Swap with the best cell and report success
+        self.swap_cells(agent, best_cell)
+        return True
+
+
 ################################################################################
 # CLI handler functions
 ################################################################################
@@ -706,6 +815,7 @@ MODELS = {
     "social": SocialModel,
     "exclusive_social": ExclusiveSocialModel,
     "disposable_friend": DisposableFriendModel,
+    "weighted_random": WeightedRandomModel,
 }
 
 
@@ -875,6 +985,7 @@ def parse_config(config_file: str) -> list[dict]:
                                                == 0):
             LOG.error("search_diameter must be at least 1 and odd")
             return None
+        config["weight_function"] = parser[section]["weight_function"]
         configs.append(config)
     return configs
 
