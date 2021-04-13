@@ -608,9 +608,9 @@ class ExclusiveSocialModel(SocialModel):
                 agent.friends.append(self.red_agents[i])
 
 
-class GreedySocialModel(SocialModel):
+class DisposableFriendModel(SocialModel):
     """Siddharth Barve
-    Segregation model which implements the greedy social policy.
+    Segregation model which implements the disposable friend policy.
 
     At the beginning, each agent randomly picks `num_friends` friends.
     Each move, the agent polls its friends for available locations
@@ -648,11 +648,11 @@ class GreedySocialModel(SocialModel):
         self.num_friends = arg_dict["num_friends"]
         self.search_diameter = arg_dict["search_diameter"] // 2
         self.file_prefix = str(
-            f"greedy_social_policy_{self.grid_size}L_"
+            f"disposable_friend_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
             f"{self.num_friends}n_{self.search_diameter*2+1}p")
-        self.model_name = "Greedy Social Policy"
-        self.legend_name = str(f"Greedy Social p={self.search_diameter*2+1} "
+        self.model_name = "Disposable Friend Policy"
+        self.legend_name = str(f"Disposable Friend p={self.search_diameter*2+1} "
                                f"n={self.num_friends}")
 
     def init_friends(self, agent):
@@ -705,7 +705,7 @@ MODELS = {
     "random": RandomModel,
     "social": SocialModel,
     "exclusive_social": ExclusiveSocialModel,
-    "greedy_social": GreedySocialModel,
+    "disposable_friend": DisposableFriendModel,
 }
 
 
