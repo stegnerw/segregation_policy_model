@@ -470,10 +470,10 @@ class SocialModel(SegregationModel):
         self.file_prefix = str(
             f"social_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
-            f"{self.num_friends}p_{self.search_diameter*2+1}n")
+            f"{self.num_friends}n_{self.search_diameter*2+1}p")
         self.model_name = "Social Policy"
-        self.legend_name = str(f"Social n={self.search_diameter*2+1} "
-                               f"p={self.num_friends}")
+        self.legend_name = str(f"Social p={self.search_diameter*2+1} "
+                               f"n={self.num_friends}")
 
     def init_population(self) -> None:
         """Initialize the population with friends"""
@@ -547,7 +547,8 @@ class SocialModel(SegregationModel):
         return recommendations
 
 class GreedySocialModel(SocialModel):
-    """Segregation model which implements the social policy.
+    """Siddharth Barve
+    Segregation model which implements the greedy social policy.
 
     At the beginning, each agent randomly picks `num_friends` friends.
     Each move, the agent polls its friends for available locations
@@ -587,10 +588,10 @@ class GreedySocialModel(SocialModel):
         self.file_prefix = str(
             f"greedy_social_policy_{self.grid_size}L_"
             f"{self.num_agents}N_{self.min_neighbors}k_"
-            f"{self.num_friends}p_{self.search_diameter*2+1}n")
+            f"{self.num_friends}n_{self.search_diameter*2+1}p")
         self.model_name = "Greedy Social Policy"
-        self.legend_name = str(f"Greedy Social n={self.search_diameter*2+1} "
-                               f"p={self.num_friends}")
+        self.legend_name = str(f"Greedy Social p={self.search_diameter*2+1} "
+                               f"n={self.num_friends}")
            
     def init_friends(self,agent):
         agent.friends=[]
