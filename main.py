@@ -6,7 +6,26 @@
 # Assignment: Homework 2 - Schelling Segregation Model
 ################################################################################
 """This module is the main module for the segregation model.
-TODO: Usage, etc.
+Authors:
+- Wayne Stegner
+- Zuguang Liu
+- Sid Barve
+
+Usage
+-----
+Use the provided conda environment. Conda usage is discussed here:
+https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html
+
+Once you are in the conda environment, you can type:
+python3 main.py -h
+for the usage of the file. If you are in Unix, you may type:
+./main.py -h
+
+For example, to run the code with the social config file at log level INFO:
+./main.py -ll 2 cfg/social.ini
+
+To change the simulation parameters, you must edit an existing config file or
+make a new one. The config file has each parameter documented.
 """
 # Standard library
 from __future__ import annotations
@@ -60,6 +79,8 @@ class Agent():
         The color of the agent
     pos : np.ndarray
         The initial position of the agent
+    friends : list[Agent]
+        List of friend agents
     """
     def __init__(self, color: np.ndarray, pos: np.ndarray):
         self.color = color
@@ -94,7 +115,7 @@ class SegregationModel(ABC):
     arg_dict["iterations"] : int
         Number of iterations to run the simulation.
     """
-    def __init__(self, arg_dict):
+    def __init__(self, arg_dict) -> None:
         self.make_gif = arg_dict["make_gif"]
         self.grid_size = arg_dict["grid_size"]
         self.min_neighbors = arg_dict["min_neighbors"]
@@ -117,7 +138,7 @@ class SegregationModel(ABC):
         # This gets initialized in a function but the linter doesn't like that
         self.temp_gif_dir = TMP_DIR.joinpath(self.file_prefix)
 
-    def run_sim(self):
+    def run_sim(self) -> None:
         """Run the simulation with the parameters of the object."""
         LOG.info(f"Starting simulation for {self.model_name}")
         # Clear old gifs from this policy
@@ -127,7 +148,6 @@ class SegregationModel(ABC):
             else:
                 path.unlink()
         for self.iteration in range(self.iterations):
-            # TODO: (#4) This could be better with progress bars
             LOG.info(f"Begin iteration {self.iteration+1} of "
                      f"{self.iterations}")
             self.init_population()
@@ -137,7 +157,6 @@ class SegregationModel(ABC):
             self.save_env()
             self.log_happiness()
             for self.epoch in range(1, self.max_epochs + 1):
-                # TODO: (#4) Again, could be better with progress bars
                 LOG.info(f"Begin epoch {self.epoch} of {self.max_epochs}")
                 random.shuffle(self.population)
                 for agent in self.population:
@@ -168,7 +187,7 @@ class SegregationModel(ABC):
         """
         ...
 
-    def init_population(self):
+    def init_population(self) -> None:
         """Initialize `self.population`."""
         self.env = np.empty((self.grid_size, self.grid_size), dtype=object)
         self.population = list()
@@ -266,7 +285,7 @@ class SegregationModel(ABC):
                 matching_neighbors += 1
         return ((matching_neighbors >= self.min_neighbors), matching_neighbors)
 
-    def log_happiness(self):
+    def log_happiness(self) -> None:
         """Log the portion of happy agents."""
         LOG.debug("Logging happiness")
         happy_agents = 0
@@ -336,7 +355,6 @@ class SegregationModel(ABC):
         epochs = np.arange(self.max_epochs + 1)
         # Create the plot
         fig, axis = plt.subplots()
-        # TODO: (#5) If someone wants to make this look nicer, PLEASE DO!
         axis.errorbar(epochs, mean, yerr=stdev)
         axis.set_xlabel("Epoch")
         axis.set_xlim([0, self.max_epochs])
@@ -378,7 +396,7 @@ class RandomModel(SegregationModel):
     arg_dict["iterations"] : int
         Number of iterations to run the simulation.
     """
-    def __init__(self, arg_dict: dict):
+    def __init__(self, arg_dict: dict) -> None:
         super().__init__(arg_dict)
         self.file_prefix = str(f"random_policy_{self.grid_size}L_"
                                f"{self.num_agents}N_{self.min_neighbors}k")
@@ -463,7 +481,7 @@ class SocialModel(SegregationModel):
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
-    def __init__(self, arg_dict):
+    def __init__(self, arg_dict) -> None:
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
         self.search_diameter = arg_dict["search_diameter"] // 2
@@ -581,7 +599,7 @@ class ExclusiveSocialModel(SocialModel):
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
-    def __init__(self, arg_dict):
+    def __init__(self, arg_dict) -> None:
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
         self.search_diameter = arg_dict["search_diameter"] // 2
@@ -643,7 +661,7 @@ class DisposableFriendModel(SocialModel):
         Search radius of each friend for "social" policy. Different
         policies may use this differently if desired.
     """
-    def __init__(self, arg_dict):
+    def __init__(self, arg_dict) -> None:
         super().__init__(arg_dict)
         self.num_friends = arg_dict["num_friends"]
         self.search_diameter = arg_dict["search_diameter"] // 2
@@ -656,7 +674,14 @@ class DisposableFriendModel(SocialModel):
             f"Disposable Friend p={self.search_diameter*2+1} "
             f"n={self.num_friends}")
 
-    def init_friends(self, agent):
+    def init_friends(self, agent: Agent) -> None:
+        """Initialize the friends list.
+
+        Parameters
+        ----------
+        agent : Agent
+            The agent to initialize the friends of.
+        """
         agent.friends = []
         indeces = list(range(len(self.population)))
         random.shuffle(indeces)
@@ -727,7 +752,7 @@ class WeightedRandomModel(SegregationModel):
     arg_dict["weight_function"] : string
         Type of weight function (C1, C2, F1, F2)
     """
-    def __init__(self, arg_dict: dict):
+    def __init__(self, arg_dict: dict) -> None:
         super().__init__(arg_dict)
         self.model_name = "Weighted Random Policy"
         self.weight_function = arg_dict['weight_function']
@@ -872,7 +897,6 @@ def main(arg_dicts: list[dict], plot_name: str,
     for model in models:
         mean = model.happiness.mean(axis=0)
         stdev = model.happiness.std(axis=0)
-        # TODO: (#5) If someone wants to make this look nicer, PLEASE DO!
         axis.errorbar(epochs,
                       mean,
                       yerr=stdev,
