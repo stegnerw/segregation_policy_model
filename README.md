@@ -7,8 +7,8 @@ Homework 2 for EECE 7065 Complex Systems.
 The objective of this assignment is to investigate emergent behavior of several
 segregation policies.
 We take a grid of cells and add members from two classes (red and blue).
-Each cell is happy if it has $k$ neighbors of the same class (in this case,
-$k=3$).
+Each cell is happy if it has *k* neighbors of the same class (in this case,
+*k=3*).
 If the cell is unhappy, it moves based on a policy, which we define below.
 
 ### Random Policy
