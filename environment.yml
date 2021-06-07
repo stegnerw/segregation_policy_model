@@ -1,4 +1,4 @@
-name: penguin_swarm
+name: segregation_policy_model
 channels:
   - defaults
 dependencies:
@@ -81,4 +81,3 @@ dependencies:
   - yapf=0.31.0=pyhd3eb1b0_0
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.5=h9ceee32_0
-prefix: /home/wayne/miniconda3/envs/penguin_swarm
