@@ -1,0 +1,204 @@
+\documentclass[12pt, titlepage]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[
+	citecounter,
+	labelnumber,
+	backend=biber,
+	bibencoding=utf8,
+	sorting=none
+]{biblatex}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\addbibresource{./bibliography.bib}
+
+\newcommand{\figref}[1]{Figure~\ref{#1}}
+
+\setlength{\parindent}{0pt}
+
+\title{%
+	Segregation Modeling \\
+	\large EECE7065 --- Homework 2
+}
+\author{%
+	Wayne Stegner
+	\and
+	Zuguang Liu
+	\and
+	Siddharth Barve
+}
+\date{April 12, 2021}
+
+\begin{document}
+	\maketitle
+
+	\section{Random and Social Policies}
+	\vspace{-12pt}
+	\par \textbf{Methodology}
+	\par We implemented two segregation policies using the Schelling model.
+	In summary, an $L$ x $L$ grid is initialized with $N$ agents, with each
+	agent being either blue or red.
+	Each agent is happy if it has $k$ matching neighbors.
+	For our simulations, we used $L = 40$, $N = 1440$, and $k = 3$.
+	The simulation consists of 30 simulations, each having 20 epochs.
+	For each epoch, the population of agents is shuffled, then each agent is given
+	the option to move.
+	If the agent is happy, it does not move.
+	\par The first policy for the Schelling model is the random policy.
+	In this policy, an agent decides its move simply by picking a random cell
+	which will make it happy.
+	If the agent checks 100 cells and none of them make it happy, it chooses the
+	one with the most matching neighbors out of those 100 cells.
+	\par The second policy is the social network recommendation policy, or the
+	social policy for short.
+	At the beginning of each iteration, each agent is assigned $n$ friends, which
+	remain constant throughout the iteration.
+	Each friend searches around it in a $p$ x $p$ grid for cells which will make
+	the agent happy, then the agent chooses randomly from those cells.
+	If no cells are suggested, the agent does not move.
+	\par The social model was used with varying values for $n$ and $p$, and those
+	results along with the random model results are shown in
+	\figref{fig:social_happiness}.
+	\vspace{-12pt}
+	\begin{figure}[htb]
+		\centering
+		\includegraphics[width=0.65\textwidth]{img/social_happiness.png}
+		\caption{Time-series plot of average happiness for each epoch of the social
+			policy compared to the random policy.}%
+		\label{fig:social_happiness}
+	\end{figure}
+	\vspace{-12pt}
+	\par \textbf{Discussion}
+	\par The results shown in \figref{fig:social_happiness} illustrate that
+	random policy is able to converge faster and more consistently to an optimal
+	happiness (happiness $=$ 1.0) when compared to social network recommendation.
+	Additionally, we can observe that a small number of friends ($n=5$) and
+	neighborhood ($p=3$) results in the agents converging to sub-optimal
+	happiness.
+	We believe that this may be due to the fact the agents in the social network
+	are dependent on the recommendation of friends to move.
+	If there are too few friends and a small neighborhood, then the search space
+	for available locations is much smaller and the agent may get stuck in an
+	unhappy location.
+	There is no mechanism in this policy to introduce randomness to the friends
+	list, so the agent is stuck unhappy.
+	Additionally, as more agents converge to a happy location, the friends and
+	their neighborhoods become fixed increasing the chances that an agent may not
+	be able to find an available location through friend recommendations.
+	\newpage
+
+	\section{Exclusive Social Policy --- Wayne}
+	\vspace{-12pt}
+	\par \textbf{Methodology}
+	\par In the social policy, we noticed that some of the policies with lower
+	$n$ and $p$ values converge to noticeably lower happiness levels, shown in
+	\figref{fig:social_happiness}.
+	To counteract that, I thought it would be interesting to make agents only
+	able to be friends with their own color.
+	The rationale is that if the agents are segregating, then a friend of the
+	same color as the agent will be more likely to be surrounded by its own kind,
+	so making all of the friends the same color should increase the likelihood of
+	finding a cell that makes the agent happy.
+	\vspace{-12pt}
+	\begin{figure}[htb]
+		\centering
+		\includegraphics[width=0.8\textwidth]{img/exclusive_social_happiness.png}
+		\vspace{-12pt}
+		\caption{Time-series plot of average happiness for each epoch of the
+			exclusive social policy compared to the random policy.}%
+		\label{fig:excl_social_happiness}
+	\end{figure}
+	\vspace{-12pt}
+	\par \textbf{Discussion}
+	\par The results show that the exclusive social policy is more effective at
+	converging to all agents being happy.
+	There is some slight variation in the first several epochs, but around epoch 5
+	all configurations appear to be mostly converged to 100\% happiness, or
+	slightly less.
+	Note that $n=3$, $p=5$ still has small error bars, meaning that in some cases
+	it converged to a state where not all agents were happy.
+	This result is an improvement over the previous social policy, however it
+	still suffers from the inability to change things up if it reaches a state
+	where some agents are unhappy and do not have any suggestions from its
+	friends.
+	\newpage
+
+	\section{Distance Weighted Random Policy --- Liu}
+	\vspace{-12pt}
+	\par \textbf{Methodology}
+	\par In Policy 1, the selection of the random relocation treats all candidates
+	equally.
+	This alternative rule modifies it such that agents move to the best empty
+	position regarding its matching neighbors weighted by the Euclidean distance
+	from the agent.
+	The selection poll is still a random $p$-size subset of the empty cells.
+	The Euclidean distance also considers the environment wrapped to find the
+	shortest distance possible.
+
+	To implement this policy, a weighted happiness index
+	$h = w \left( \frac{d}{D} \right) \cdot \frac{n}{8}$ is used to evaluate the
+	empty cells instead, where $d$ represents the distance between an agent and
+	an empty cell, $w$ is a weight function, $D$ is the maximum possible distance
+	in the environment (the diagonal distance), and $n$ is the number of matching
+	neighbors.
+
+	I experimented with four types of weight functions: $w_{C1}(x) = 1 - x$,
+	$w_{C2}(x) = {(1 - x)}^2$, $w_{F1}(x) = x$ and $w_{F2}(x) = x^2$.
+	These functions vary in linearity as well as whether they weight close cells
+	or far cells more.
+
+	\vspace{-12pt}
+	\begin{figure}[htb]
+		\centering
+		\includegraphics[width=0.79\textwidth]{img/weighted_random_happiness.png}
+		\vspace{-12pt}
+		\caption{Average happiness of weighted random compared to Policy 1.}%
+		\label{fig:LIU_happiness}
+	\end{figure}
+	\vspace{-12pt}
+	\par \textbf{Discussion}
+	\par Though they all eventually converged to 1, the performances of C1- and
+	F1-weighted random policies are slightly less that that of equal randomness,
+	followed by F2 and C2.
+	In conclusion, using distance-weighted measure in the random move policy is
+	not much better than treating all candidates equally.
+	For a poorly-designed weight function, it may even result in lower efficiency.
+	\newpage
+
+	\section{Disposable Friend Policy --- Sid}
+	\vspace{-12pt}
+	\par \textbf{Methodology}
+	\par In Policy 2, social network recommendation, we noticed that a smaller
+	number of friends ($n$) and neighborhood ($p$) resulted in sub-optimal
+	happiness (happiness $<$ 1.0) as shown in \figref{fig:social_happiness}.
+	This may have been due to the fact that if no friend can recommend a location,
+	then the agent does not move.
+	This may result in no available relocation for the agent as the search space
+	decreases due to a low number of friends and small neighborhood.
+	To counteract the friend recommendation bottleneck, I allowed each agent to
+	select a new set of friends if the agent was unhappy and the friends were
+	unhelpful.
+	By selecting a new set of friends which guarantee an available location, the
+	agent would not be stuck in a location which would make it unhappy.
+	\vspace{-12pt}
+	\begin{figure}[htb]
+		\centering
+		\includegraphics[width=0.8\textwidth]{img/disposable_friend_happiness.png}
+		\vspace{-12pt}
+		\caption{Time-series plot of average happiness for each epoch of the
+			disposable friend policy compared to the random policy.}%
+		\label{fig:disposable_friend_happiness}
+	\end{figure}
+	\vspace{-12pt}
+	\par \textbf{Discussion}
+	\par The results shown in \figref{fig:disposable_friend_happiness} illustrate
+	that the disposable friend policy was as effective as the random policy in
+	converging the agents to an optimal happiness for all $n$ and $p$ values
+	tested.
+	This result is an improvement over the social network recommendation policy
+	which results in sub-optimal convergence for low $n$ and $p$ values.
+	The disposable friend policy performs similar to the random policy with
+	smaller $n$ and $p$ values by resetting the friends when agents are unhappy
+	and unhelped.
+	\newpage
+
+\end{document}
